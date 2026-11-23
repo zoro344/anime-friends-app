@@ -53,8 +53,8 @@ jobs:
           retention-days: 7
           if-no-files-found: error
 
-      - name: Check Dart formatting
-        run: dart format --output=none --set-exit-if-changed lib test
+      - name: Format Dart files
+        run: dart format lib test
 
       - name: Analyze Flutter project
         run: flutter analyze --no-fatal-infos

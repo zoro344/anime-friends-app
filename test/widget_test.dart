@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 import 'package:anime_friends/core/network/api_client.dart';
 import 'package:anime_friends/core/state/app_state.dart';
 import 'package:anime_friends/main.dart';
+import 'package:flutter/material.dart';
 
 class _FakeHttpClient extends http.BaseClient {
   @override

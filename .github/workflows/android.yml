@@ -17,6 +17,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: backend/package-lock.json
+
+      - name: Install backend dependencies
+        run: npm ci --prefix backend
+
+      - name: Check backend syntax
+        run: npm run check --prefix backend
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
@@ -29,32 +42,22 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Generate Android scaffold separately
-        shell: bash
-        run: |
-          SCAFFOLD="$(mktemp -d)/af_scaffold"
-          flutter create \
-            --platforms=android \
-            --org com.animefriends \
-            --project-name anime_friends \
-            "$SCAFFOLD"
-          cp -R "$SCAFFOLD/android" ./android
-
-      - name: Install dependencies
+      - name: Install Flutter dependencies
         run: flutter pub get
 
       - name: Analyze Flutter project
         run: flutter analyze --no-fatal-infos
 
-      - name: Run tests
+      - name: Run Flutter tests
         run: flutter test
 
       - name: Build release APK
         run: flutter build apk --release
 
-      - name: Upload APK
+      - name: Upload Android APK
         uses: actions/upload-artifact@v4
         with:
           name: anime-friends-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 7
           if-no-files-found: error

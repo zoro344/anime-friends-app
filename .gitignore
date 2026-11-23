@@ -1,0 +1,42 @@
+# Flutter / Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+.packages
+build/
+coverage/
+*.iml
+.idea/
+.DS_Store
+
+# Android / Gradle
+.gradle/
+android/.gradle/
+android/local.properties
+android/key.properties
+*.jks
+*.keystore
+
+# Node.js
+backend/node_modules/
+backend/npm-debug.log*
+backend/yarn-debug.log*
+
+# Backend secrets and private data
+backend/.env
+backend/.news-token
+backend/data/*.json
+backend/backups/
+
+# Environment files
+.env
+.env.*
+!.env.example
+!backend/.env.example
+
+# Generated packages
+*.apk
+*.aab
+*.zip

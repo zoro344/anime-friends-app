@@ -1,204 +1,210 @@
 import 'package:flutter/material.dart';
 
+import 'features/auth/presentation/screens/auth_screen.dart';
+
+import 'app/app_theme.dart';
+import 'core/state/app_state.dart';
+import 'core/state/app_state_scope.dart';
+import 'features/feed/presentation/screens/feed_screen.dart';
+import 'features/anime/presentation/screens/anime_screen.dart';
+import 'features/watch/presentation/screens/watch_screen.dart';
+import 'features/chats/presentation/screens/chats_screen.dart';
+import 'features/profile/presentation/screens/profile_screen.dart';
+import 'features/notifications/presentation/screens/notifications_screen.dart';
+import 'features/news/presentation/screens/news_screen.dart';
+
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
   runApp(const AnimeFriendsApp());
 }
 
-class AnimeFriendsApp extends StatelessWidget {
-  const AnimeFriendsApp({super.key});
+class AnimeFriendsApp extends StatefulWidget {
+  const AnimeFriendsApp({
+    super.key,
+    this.appState,
+  });
 
-  static const violet = Color(0xFF9B72FF);
-  static const background = Color(0xFF08070B);
-  static const surface = Color(0xFF17131F);
+  final AppState? appState;
+
+  @override
+  State<AnimeFriendsApp> createState() => _AnimeFriendsAppState();
+}
+
+class _AnimeFriendsAppState extends State<AnimeFriendsApp> {
+  late final AppState _appState;
+  late final bool _ownsAppState;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _ownsAppState = widget.appState == null;
+    _appState = widget.appState ?? AppState();
+
+    if (_ownsAppState) {
+      _appState.initialize();
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_ownsAppState) {
+      _appState.dispose();
+    }
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       title: 'Anime Friends',
-      theme: ThemeData(
-        useMaterial3: true,
-        brightness: Brightness.dark,
-        scaffoldBackgroundColor: background,
-        colorScheme: ColorScheme.fromSeed(
-          seedColor: violet,
-          brightness: Brightness.dark,
-          surface: surface,
-        ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: background,
-          surfaceTintColor: Colors.transparent,
-          elevation: 0,
-        ),
-        navigationBarTheme: const NavigationBarThemeData(
-          backgroundColor: surface,
-          indicatorColor: Color(0xFF39275B),
-          labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
+      theme: AppTheme.dark,
+      home: AppStateScope(
+        state: _appState,
+        child: Builder(
+          builder: (context) {
+            final state = AppStateScope.of(context);
+
+            if (state.isInitializing) {
+              return const Scaffold(
+                body: Center(child: CircularProgressIndicator()),
+              );
+            }
+
+            return state.isAuthenticated
+                ? const MainScreen()
+                : const AuthScreen();
+          },
         ),
       ),
-      home: const HomePage(),
     );
   }
 }
 
-class HomePage extends StatefulWidget {
-  const HomePage({super.key});
+class MainScreen extends StatefulWidget {
+  const MainScreen({super.key});
 
   @override
-  State<HomePage> createState() => _HomePageState();
+  State<MainScreen> createState() => _MainScreenState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _MainScreenState extends State<MainScreen> {
   int selectedIndex = 0;
 
-  static const pages = [
-    EmptyPage(
-      title: 'Your feed is quiet',
-      message: 'Posts from your friends will appear here.',
-      icon: Icons.dynamic_feed_outlined,
-    ),
-    EmptyPage(
-      title: 'Anime catalogue',
-      message: 'Anime search and real catalogue data are not connected yet.',
-      icon: Icons.movie_outlined,
-    ),
-    EmptyPage(
-      title: 'Watch Together',
-      message: 'Room creation and playback synchronization are not connected yet.',
-      icon: Icons.groups_outlined,
-    ),
-    EmptyPage(
-      title: 'Your chats',
-      message: 'Your conversations will appear here after messaging is connected.',
-      icon: Icons.chat_bubble_outline,
-    ),
-    EmptyPage(
-      title: 'Your profile',
-      message: 'Sign in and profile services are not connected yet.',
-      icon: Icons.person_outline,
-    ),
+  static const List<Widget> _pages = [
+    FeedScreen(),
+    AnimeScreen(),
+    WatchScreen(),
+    ChatsScreen(),
+    ProfileScreen(),
   ];
 
-  static const destinations = [
-    NavigationDestination(
-      icon: Icon(Icons.dynamic_feed_outlined),
-      selectedIcon: Icon(Icons.dynamic_feed),
-      label: 'Feed',
-    ),
-    NavigationDestination(
-      icon: Icon(Icons.movie_outlined),
-      selectedIcon: Icon(Icons.movie),
-      label: 'Anime',
-    ),
-    NavigationDestination(
-      icon: Icon(Icons.groups_outlined),
-      selectedIcon: Icon(Icons.groups),
-      label: 'Watch',
-    ),
-    NavigationDestination(
-      icon: Icon(Icons.chat_bubble_outline),
-      selectedIcon: Icon(Icons.chat_bubble),
-      label: 'Chats',
-    ),
-    NavigationDestination(
-      icon: Icon(Icons.person_outline),
-      selectedIcon: Icon(Icons.person),
-      label: 'Profile',
-    ),
+  static const List<String> _titles = [
+    'Anime Friends',
+    'Discover Anime',
+    'Watch Together',
+    'Messages',
+    'Your Profile',
   ];
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        titleSpacing: 20,
-        title: const Row(
+        title: Row(
           children: [
-            Icon(
-              Icons.auto_awesome,
-              color: AnimeFriendsApp.violet,
-              size: 25,
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(11),
+              ),
+              child: const Center(
+                child: Text(
+                  'AF',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w900,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
             ),
-            SizedBox(width: 10),
-            Text(
-              'Anime Friends',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                letterSpacing: -0.5,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                _titles[selectedIndex],
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 19,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            tooltip: 'Anime News',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const NewsScreen(),
+              ),
+            ),
+            icon: const Icon(Icons.newspaper_outlined),
+          ),
+          IconButton(
+            tooltip: 'Notifications',
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const NotificationsScreen(),
+              ),
+            ),
+            icon: const Icon(Icons.notifications_none),
+          ),
+        ],
       ),
-      body: AnimatedSwitcher(
-        duration: const Duration(milliseconds: 180),
-        child: pages[selectedIndex],
+      body: IndexedStack(
+        index: selectedIndex,
+        children: _pages,
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: selectedIndex,
-        destinations: destinations,
         onDestinationSelected: (index) {
-          setState(() => selectedIndex = index);
+          setState(() {
+            selectedIndex = index;
+          });
         },
-      ),
-    );
-  }
-}
-
-class EmptyPage extends StatelessWidget {
-  const EmptyPage({
-    required this.title,
-    required this.message,
-    required this.icon,
-    super.key,
-  });
-
-  final String title;
-  final String message;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(32),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 76,
-              height: 76,
-              decoration: BoxDecoration(
-                color: const Color(0xFF21182F),
-                borderRadius: BorderRadius.circular(24),
-              ),
-              child: Icon(
-                icon,
-                size: 34,
-                color: AnimeFriendsApp.violet,
-              ),
-            ),
-            const SizedBox(height: 22),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 21,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.white.withValues(alpha: 0.58),
-                fontSize: 14,
-                height: 1.5,
-              ),
-            ),
-          ],
-        ),
+        destinations: const [
+          NavigationDestination(
+            icon: Icon(Icons.home_outlined),
+            selectedIcon: Icon(Icons.home),
+            label: 'Feed',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.explore_outlined),
+            selectedIcon: Icon(Icons.explore),
+            label: 'Anime',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.play_circle_outline),
+            selectedIcon: Icon(Icons.play_circle),
+            label: 'Watch',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.chat_bubble_outline),
+            selectedIcon: Icon(Icons.chat_bubble),
+            label: 'Chats',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.person_outline),
+            selectedIcon: Icon(Icons.person),
+            label: 'Profile',
+          ),
+        ],
       ),
     );
   }

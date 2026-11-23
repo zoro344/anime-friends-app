@@ -49,6 +49,7 @@ class SupabaseService {
     return client.auth.signUp(
       email: email.trim(),
       password: password,
+      emailRedirectTo: 'animefriends://login-callback',
       data: {
         'username': username.trim().toLowerCase(),
         'display_name': displayName.trim(),

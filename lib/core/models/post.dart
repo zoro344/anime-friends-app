@@ -36,6 +36,24 @@ class Post {
     );
   }
 
+  factory Post.fromSupabase(Map<String, dynamic> json) {
+    final createdAt = DateTime.tryParse('${json['created_at'] ?? ''}');
+    final displayName = '${json['display_name'] ?? ''}'.trim();
+    final username = '${json['username'] ?? 'Anime Friend'}';
+
+    return Post(
+      id: '${json['id'] ?? ''}',
+      user: displayName.isNotEmpty ? displayName : username,
+      time: createdAt == null ? 'Recently' : _relativeTime(createdAt),
+      text: '${json['content'] ?? ''}',
+      likes: (json['like_count'] as num?)?.toInt() ?? 0,
+      comments: (json['comment_count'] as num?)?.toInt() ?? 0,
+      liked: json['liked'] == true,
+      userId: json['user_id']?.toString(),
+      imageUrl: json['image_url']?.toString(),
+    );
+  }
+
   static String _relativeTime(DateTime value) {
     final difference = DateTime.now().difference(value.toLocal());
     if (difference.inMinutes < 1) return 'Just now';

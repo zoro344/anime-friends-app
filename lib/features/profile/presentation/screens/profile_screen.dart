@@ -26,7 +26,9 @@ class ProfileScreen extends StatelessWidget {
               AFAvatar(label: appState.username, radius: 50),
               const SizedBox(height: 15),
               Text(
-                appState.username,
+                appState.displayName.trim().isEmpty
+                    ? appState.username
+                    : appState.displayName,
                 style: AppTypography.headingMedium.copyWith(
                   color: AppColors.textPrimary,
                 ),
@@ -255,6 +257,7 @@ class _EditProfileDialog extends StatefulWidget {
 
 class _EditProfileDialogState extends State<_EditProfileDialog> {
   late final TextEditingController nameController;
+  late final TextEditingController displayNameController;
   late final TextEditingController bioController;
 
   @override
@@ -263,25 +266,55 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
     nameController = TextEditingController(
       text: widget.appState.username,
     );
+    displayNameController = TextEditingController(
+      text: widget.appState.displayName,
+    );
     bioController = TextEditingController(
       text: widget.appState.bio,
     );
   }
 
+  bool _isSaving = false;
+
   Future<void> _saveProfile() async {
-    await widget.appState.updateProfile(
+    if (_isSaving) return;
+
+    setState(() => _isSaving = true);
+
+    final success = await widget.appState.updateProfile(
       newUsername: nameController.text,
+      newDisplayName: displayNameController.text,
       newBio: bioController.text,
     );
 
     if (!mounted) return;
+
+    setState(() => _isSaving = false);
+
+    if (!success) {
+      final message = widget.appState.authError as String;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            message.isEmpty ? 'Could not update your profile.' : message,
+          ),
+        ),
+      );
+      return;
+    }
+
     FocusScope.of(context).unfocus();
     Navigator.of(context).pop();
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Profile updated successfully.')),
+    );
   }
 
   @override
   void dispose() {
     nameController.dispose();
+    displayNameController.dispose();
     bioController.dispose();
     super.dispose();
   }
@@ -302,9 +335,18 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
         children: [
           TextField(
             controller: nameController,
-            maxLength: 30,
+            maxLength: 24,
             style: const TextStyle(color: AppColors.textPrimary),
             decoration: const InputDecoration(labelText: 'Username'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: displayNameController,
+            maxLength: 40,
+            style: const TextStyle(color: AppColors.textPrimary),
+            decoration: const InputDecoration(
+              labelText: 'Display name (optional)',
+            ),
           ),
           const SizedBox(height: 12),
           TextField(
@@ -325,8 +367,14 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
           child: const Text('Cancel'),
         ),
         FilledButton(
-          onPressed: _saveProfile,
-          child: const Text('Save'),
+          onPressed: _isSaving ? null : _saveProfile,
+          child: _isSaving
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Text('Save'),
         ),
       ],
     );

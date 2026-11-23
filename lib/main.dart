@@ -4,6 +4,7 @@ import 'features/auth/presentation/screens/auth_screen.dart';
 
 import 'app/app_theme.dart';
 import 'core/state/app_state.dart';
+import 'core/services/supabase_service.dart';
 import 'core/state/app_state_scope.dart';
 import 'features/feed/presentation/screens/feed_screen.dart';
 import 'features/anime/presentation/screens/anime_screen.dart';
@@ -13,8 +14,15 @@ import 'features/profile/presentation/screens/profile_screen.dart';
 import 'features/notifications/presentation/screens/notifications_screen.dart';
 import 'features/news/presentation/screens/news_screen.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  try {
+    await SupabaseService.initialize();
+  } catch (error) {
+    debugPrint('Supabase initialization failed: $error');
+  }
+
   runApp(const AnimeFriendsApp());
 }
 

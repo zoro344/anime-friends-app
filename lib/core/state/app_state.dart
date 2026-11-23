@@ -8,6 +8,7 @@ import '../models/conversation.dart';
 import '../models/post.dart';
 import '../models/watch_room.dart';
 import '../network/api_client.dart';
+import '../services/supabase_service.dart';
 
 class AppState extends ChangeNotifier {
   AppState({AnimeFriendsApi? api}) : api = api ?? AnimeFriendsApi();
@@ -24,13 +25,16 @@ class AppState extends ChangeNotifier {
   bool isInitializing = true;
   bool isAuthenticated = false;
   bool isBusy = false;
+  bool needsProfileRecovery = false;
   String authError = '';
+  String authMessage = '';
   String feedError = '';
   String animeError = '';
   String roomError = '';
 
   String userId = '';
   String username = 'Anime Friend';
+  String displayName = '';
   String handle = '@animefriend';
   String bio = '';
   String? avatarUrl;
@@ -70,70 +74,199 @@ class AppState extends ChangeNotifier {
   String get backendUrl => api.baseUrl;
   bool get isBackendConfigured => api.isConfigured;
 
+
   Future<void> initialize() async {
     try {
-      await api.restoreSession();
-      if (api.isAuthenticated && api.isConfigured) {
-        try {
-          final response = await api.get('/api/me');
-          _applyUser(response['user'] as Map<String, dynamic>);
-          isAuthenticated = true;
-          await loadData();
-          _connectRealtime();
-        } on ApiException {
-          await api.clearSession();
-          isAuthenticated = false;
-        }
+      if (!SupabaseService.isInitialized) {
+        authError = SupabaseService.isConfigured
+            ? 'Supabase initialization failed. Check the configuration.'
+            : 'Supabase is not configured yet. Add the project URL and '
+              'publishable key to the app build.';
+        return;
       }
+
+      final user = SupabaseService.currentUser;
+      if (user != null) {
+        await _loadSupabaseProfile(user.id);
+        isAuthenticated = true;
+        await loadFeed();
+      }
+    } catch (_) {
+      isAuthenticated = false;
+      needsProfileRecovery = SupabaseService.currentUser != null;
+      authError = needsProfileRecovery
+          ? 'Your account is signed in, but your profile could not be loaded. Check your connection and retry.'
+          : 'Could not restore your account session. Please sign in again.';
     } finally {
       isInitializing = false;
       notifyListeners();
     }
   }
 
-  Future<void> configureBackend(String url) async {
-    await api.configure(url);
-    authError = '';
-    notifyListeners();
+  Future<void> _loadSupabaseProfile(String id) async {
+    final profile = await SupabaseService.client
+        .from('profiles')
+        .select('id, username, display_name, bio, avatar_url')
+        .eq('id', id)
+        .maybeSingle();
+
+    if (profile == null) {
+      throw StateError('Your profile has not been created yet.');
+    }
+
+    userId = '${profile['id']}';
+    username = '${profile['username'] ?? 'Anime Friend'}';
+    displayName = '${profile['display_name'] ?? ''}';
+    handle = '@$username';
+    bio = '${profile['bio'] ?? ''}';
+    avatarUrl = profile['avatar_url']?.toString();
   }
 
-  Future<void> signIn(String usernameInput, String password) =>
-      _authenticate('/api/auth/login', usernameInput, password);
+  Future<void> retryProfileRecovery() async {
+    final user = SupabaseService.currentUser;
 
-  Future<void> signUp(String usernameInput, String password) =>
-      _authenticate('/api/auth/signup', usernameInput, password);
-
-  Future<void> _authenticate(
-    String path,
-    String usernameInput,
-    String password,
-  ) async {
-    authError = '';
-    if (!api.isConfigured) {
-      authError = 'Enter your backend URL first.';
+    if (user == null) {
+      needsProfileRecovery = false;
+      authError = 'Your session has expired. Please sign in again.';
       notifyListeners();
       return;
     }
+
+    isBusy = true;
+    authError = '';
+    notifyListeners();
+
+    try {
+      await _loadSupabaseProfile(user.id);
+      isAuthenticated = true;
+      needsProfileRecovery = false;
+      authError = '';
+      await loadFeed();
+    } catch (_) {
+      isAuthenticated = false;
+      needsProfileRecovery = true;
+      authError =
+          'Your profile is still unavailable. Check your connection and try again.';
+    } finally {
+      isBusy = false;
+      notifyListeners();
+    }
+  }
+
+  Future<void> signUp(
+    String email,
+    String password,
+    String usernameInput, [
+    String displayName = '',
+  ]) async {
+    authError = '';
+    authMessage = '';
+
+    final normalizedUsername = usernameInput.trim().toLowerCase();
+
+    if (!RegExp(r'^[a-z0-9_]{3,24}$').hasMatch(normalizedUsername)) {
+      authError = 'Username must be 3–24 characters using letters, numbers or underscores.';
+      notifyListeners();
+      return;
+    }
+
+    await _performAuth(() async {
+      final response = await SupabaseService.instance.signUp(
+        email: email,
+        password: password,
+        username: normalizedUsername,
+        displayName: displayName,
+      );
+
+      if (response.user == null) {
+        throw StateError('Supabase did not return a new user.');
+      }
+
+      if (response.session == null) {
+        authMessage =
+            'Account created. Check your email to verify your address, '
+            'then sign in.';
+        return;
+      }
+
+      await _loadSupabaseProfile(response.user!.id);
+      isAuthenticated = true;
+      await loadFeed();
+    });
+  }
+
+  Future<void> signIn(String email, String password) async {
+    authError = '';
+    authMessage = '';
+
+    await _performAuth(() async {
+      final response = await SupabaseService.instance.signIn(
+        email: email,
+        password: password,
+      );
+
+      final user = response.user;
+      if (user == null) {
+        throw StateError('Sign-in did not return a user.');
+      }
+
+      await _loadSupabaseProfile(user.id);
+      isAuthenticated = true;
+      await loadFeed();
+    });
+  }
+
+  Future<void> sendPasswordReset(String email) async {
+    authError = '';
+    authMessage = '';
+
+    if (email.trim().isEmpty) {
+      authError = 'Enter your email address first.';
+      notifyListeners();
+      return;
+    }
+
+    await _performAuth(() async {
+      await SupabaseService.instance.sendPasswordReset(email);
+      authMessage = 'If the account exists, a password reset email has been sent.';
+    });
+  }
+
+  Future<void> _performAuth(Future<void> Function() action) async {
     isBusy = true;
     notifyListeners();
+
     try {
-      final response = await api.post(path, body: {
-        'username': usernameInput.trim(),
-        'password': password,
-      });
-      final token = response['token']?.toString() ?? '';
-      if (token.isEmpty || response['user'] is! Map<String, dynamic>) {
-        throw const ApiException('The backend returned an incomplete sign-in response.');
+      await action();
+    } catch (error) {
+      final message = error.toString().toLowerCase();
+      needsProfileRecovery = SupabaseService.currentUser != null;
+
+      if (needsProfileRecovery) {
+        authError =
+            'Your account is signed in, but your profile could not be loaded. Retry below.';
+      } else if (message.contains('invalid login credentials') ||
+          message.contains('invalid_credentials')) {
+        authError = 'Incorrect email or password.';
+      } else if (message.contains('email not confirmed')) {
+        authError = 'Please verify your email before signing in.';
+      } else if (message.contains('user already registered') ||
+          message.contains('already been registered')) {
+        authError = 'An account with these details already exists.';
+      } else if (message.contains('password should be at least') ||
+          message.contains('weak_password')) {
+        authError = 'Choose a stronger password.';
+      } else if (message.contains('23505') ||
+          message.contains('profiles_username_lower_unique')) {
+        authError = 'That username is already taken.';
+      } else if (message.contains('socketexception') ||
+          message.contains('failed host lookup') ||
+          message.contains('network is unreachable') ||
+          message.contains('connection refused')) {
+        authError = 'Check your internet connection and try again.';
+      } else {
+        authError = 'Authentication failed. Please check your details and try again.';
       }
-      await api.setToken(token);
-      _applyUser(response['user'] as Map<String, dynamic>);
-      isAuthenticated = true;
-      await loadData();
-      _connectRealtime();
-    } on ApiException catch (error) {
-      authError = error.message;
-    } catch (_) {
-      authError = 'Something went wrong while signing in.';
     } finally {
       isBusy = false;
       notifyListeners();
@@ -143,9 +276,10 @@ class AppState extends ChangeNotifier {
   void _applyUser(Map<String, dynamic> user) {
     userId = '${user['id'] ?? ''}';
     username = '${user['username'] ?? 'Anime Friend'}';
+    displayName = '${user['display_name'] ?? ''}';
     handle = '@$username';
     bio = '${user['bio'] ?? ''}';
-    avatarUrl = user['avatar']?.toString();
+    avatarUrl = (user['avatar_url'] ?? user['avatar'])?.toString();
   }
 
   void _connectRealtime() {
@@ -233,8 +367,8 @@ class AppState extends ChangeNotifier {
     if (!isAuthenticated) {
       return;
     }
+
     await Future.wait([
-      _loadFeed(),
       _loadLibrary(),
       _loadRooms(),
       _loadChats(),
@@ -243,18 +377,31 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _loadFeed() async {
+  Future<void> loadFeed() async {
+    if (!isAuthenticated || !SupabaseService.isInitialized) {
+      return;
+    }
+
     try {
-      final response = await api.get('/api/posts', query: {'page': '1', 'limit': '30'});
+      final response = await SupabaseService.client.rpc(
+        'get_feed_posts',
+        params: {'p_limit': 30},
+      );
+
+      final rows = (response as List<dynamic>)
+          .whereType<Map<String, dynamic>>()
+          .map(Post.fromSupabase)
+          .toList();
+
       _posts
         ..clear()
-        ..addAll((response['posts'] as List<dynamic>? ?? [])
-            .whereType<Map<String, dynamic>>()
-            .map(Post.fromJson));
+        ..addAll(rows);
       feedError = '';
-    } on ApiException catch (error) {
-      feedError = error.message;
+    } catch (_) {
+      feedError = 'Could not load the Feed. Please try again.';
     }
+
+    notifyListeners();
   }
 
   Future<void> _loadLibrary() async {
@@ -435,38 +582,62 @@ class AppState extends ChangeNotifier {
 
   Future<void> createPost(String text) async {
     final value = text.trim();
-    if (value.isEmpty) {
+    if (value.isEmpty || value.length > 4000) {
       return;
     }
-    try {
-      final response = await api.post('/api/posts', body: {'text': value});
-      final post = response['post'];
-      if (post is Map<String, dynamic>) {
-        _posts.insert(0, Post.fromJson(post));
-        feedError = '';
-      }
-    } on ApiException catch (error) {
-      feedError = error.message;
+
+    if (!isAuthenticated ||
+        userId.isEmpty ||
+        !SupabaseService.isInitialized) {
+      feedError = 'Please sign in to create a post.';
+      notifyListeners();
+      return;
     }
-    notifyListeners();
+
+    try {
+      await SupabaseService.client.from('posts').insert({
+        'user_id': userId,
+        'content': value,
+      });
+      await loadFeed();
+    } catch (_) {
+      feedError = 'Could not publish your post. Please try again.';
+      notifyListeners();
+    }
   }
 
   Future<void> toggleLike(String postId) async {
     final index = _posts.indexWhere((post) => post.id == postId);
-    if (index < 0) {
+    if (index < 0 ||
+        !isAuthenticated ||
+        userId.isEmpty ||
+        !SupabaseService.isInitialized) {
       return;
     }
+
+    final wasLiked = _posts[index].liked;
+
     try {
-      final response = await api.post('/api/posts/$postId/vote', body: {'value': 1});
-      final score = (response['score'] as num?)?.toInt() ?? _posts[index].likes;
-      _posts[index] = _posts[index].copyWith(
-        likes: score,
-        liked: !_posts[index].liked,
-      );
-    } on ApiException catch (error) {
-      feedError = error.message;
+      final likes = SupabaseService.client.from('post_likes');
+
+      if (wasLiked) {
+        await likes
+            .delete()
+            .eq('post_id', postId)
+            .eq('user_id', userId);
+      } else {
+        await likes.insert({
+          'post_id': postId,
+          'user_id': userId,
+          'value': 1,
+        });
+      }
+
+      await loadFeed();
+    } catch (_) {
+      feedError = 'Could not update your like. Please try again.';
+      notifyListeners();
     }
-    notifyListeners();
   }
 
   Future<void> toggleWatchlist(AnimeItem item) async {
@@ -683,22 +854,73 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> updateProfile({
+  Future<bool> updateProfile({
     required String newUsername,
+    required String newDisplayName,
     required String newBio,
   }) async {
-    try {
-      final response = await api.patch('/api/me', body: {
-        'username': newUsername.trim(),
-        'bio': newBio.trim(),
-      });
-      if (response['user'] is Map<String, dynamic>) {
-        _applyUser(response['user'] as Map<String, dynamic>);
-      }
-    } on ApiException catch (error) {
-      authError = error.message;
+    authError = '';
+
+    final normalizedUsername = newUsername.trim().toLowerCase();
+    final normalizedDisplayName = newDisplayName.trim();
+    final normalizedBio = newBio.trim();
+
+    if (!RegExp(r'^[a-z0-9_]{3,24}$').hasMatch(normalizedUsername)) {
+      authError =
+          'Username must be 3–24 characters using letters, numbers or underscores.';
+      notifyListeners();
+      return false;
     }
-    notifyListeners();
+
+    if (normalizedDisplayName.length > 40) {
+      authError = 'Display name cannot exceed 40 characters.';
+      notifyListeners();
+      return false;
+    }
+
+    if (normalizedBio.length > 150) {
+      authError = 'Bio cannot exceed 150 characters.';
+      notifyListeners();
+      return false;
+    }
+
+    if (!SupabaseService.isInitialized || userId.isEmpty) {
+      authError = 'Please sign in before editing your profile.';
+      notifyListeners();
+      return false;
+    }
+
+    try {
+      final updated = await SupabaseService.client
+          .from('profiles')
+          .update({
+            'username': normalizedUsername,
+            'display_name': normalizedDisplayName.isEmpty
+                ? null
+                : normalizedDisplayName,
+            'bio': normalizedBio,
+          })
+          .eq('id', userId)
+          .select('id, username, display_name, bio, avatar_url')
+          .single();
+
+      _applyUser(Map<String, dynamic>.from(updated));
+      authError = '';
+      notifyListeners();
+      return true;
+    } catch (error) {
+      final message = error.toString();
+
+      if (message.contains('23505') ||
+          message.contains('profiles_username_lower_unique')) {
+        authError = 'That username is already taken.';
+      } else {
+        authError = 'Could not update your profile. Please try again.';
+      }
+
+      notifyListeners();
+      return false;
+    }
   }
 
   Future<List<Map<String, dynamic>>> loadMessages(String userId) async {
@@ -738,8 +960,57 @@ class AppState extends ChangeNotifier {
     _socket?.disconnect();
     _socket?.dispose();
     _socket = null;
-    await api.clearSession();
+
+    authError = '';
+    authMessage = '';
+
+    try {
+      if (SupabaseService.isInitialized) {
+        await SupabaseService.instance.signOut();
+
+        if (SupabaseService.currentUser != null) {
+          authError = 'Your online session is still active. Please try signing out again.';
+          notifyListeners();
+          return;
+        }
+      }
+    } catch (_) {
+      if (SupabaseService.isInitialized &&
+          SupabaseService.currentUser != null) {
+        authError = 'Could not sign out of your online account. Please try again.';
+        notifyListeners();
+        return;
+      }
+    }
+
+    var legacySessionError = '';
+    try {
+      await api.clearSession();
+    } catch (_) {
+      legacySessionError = 'Could not clear the previous app session.';
+    }
+
     isAuthenticated = false;
+    needsProfileRecovery = false;
+
+    // Clear account-specific state after successful sign-out.
+    userId = '';
+    username = 'Anime Friend';
+    displayName = '';
+    handle = '@animefriend';
+    bio = '';
+    avatarUrl = null;
+
+    authError = legacySessionError;
+    authMessage = '';
+    feedError = '';
+    animeError = '';
+    roomError = '';
+    roomChatError = '';
+    realtimeError = '';
+    friendError = '';
+    activeRoomId = '';
+    roomChatMessages.clear();
     _posts.clear();
     _anime.clear();
     _watchlist.clear();
@@ -750,7 +1021,6 @@ class AppState extends ChangeNotifier {
     _friendRequests.clear();
     _newsItems.clear();
     _notifications.clear();
-    authError = '';
     notifyListeners();
   }
 

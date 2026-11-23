@@ -40,7 +40,7 @@ class _FeedScreenState extends State<FeedScreen> {
     final posts = appState.posts;
 
     return RefreshIndicator(
-      onRefresh: appState.loadData,
+      onRefresh: appState.loadFeed,
       child: ListView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),

@@ -5,7 +5,7 @@ import 'package:share_plus/share_plus.dart';
 import '../widgets/anime_reviews_section.dart';
 
 import '../../../../core/models/anime_item.dart';
-import '../../../../core/services/jikan_service.dart';
+import '../../../../core/services/anilist_airing_service.dart';
 import '../../../../core/services/mal_service.dart';
 import '../../../../core/state/app_state_scope.dart';
 
@@ -25,7 +25,7 @@ class AnimeScreen extends StatefulWidget {
 }
 
 class _AnimeScreenState extends State<AnimeScreen> {
-  final JikanService _jikan = JikanService();
+  final AniListAiringService _airingService = AniListAiringService();
   final MalService _mal = MalService();
   final TextEditingController _searchController = TextEditingController();
 
@@ -50,6 +50,8 @@ class _AnimeScreenState extends State<AnimeScreen> {
   bool _loadingPopular = true;
   bool _loadingSearch = false;
   bool _loadingSchedule = false;
+  String _scheduleError = '';
+  int _scheduleRequestGeneration = 0;
 
   String _error = '';
   String _searchError = '';
@@ -81,7 +83,7 @@ class _AnimeScreenState extends State<AnimeScreen> {
   void dispose() {
     _searchTimer?.cancel();
     _searchController.dispose();
-    _jikan.dispose();
+    _airingService.dispose();
     _mal.dispose();
     super.dispose();
   }
@@ -110,23 +112,29 @@ class _AnimeScreenState extends State<AnimeScreen> {
   }
 
   Future<void> _loadSchedule(String day) async {
+    final requestId = ++_scheduleRequestGeneration;
+
     setState(() {
       _loadingSchedule = true;
+      _scheduleError = '';
     });
 
     try {
-      final results = await _jikan.getSchedule(day);
-      if (!mounted) return;
+      final results = await _airingService.getSchedule(day);
+      if (!mounted || requestId != _scheduleRequestGeneration) return;
 
       setState(() {
         _schedule = results;
         _loadingSchedule = false;
+        _scheduleError = '';
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted || requestId != _scheduleRequestGeneration) return;
+
       setState(() {
         _schedule = [];
         _loadingSchedule = false;
+        _scheduleError = _cleanError(error);
       });
     }
   }
@@ -144,16 +152,16 @@ class _AnimeScreenState extends State<AnimeScreen> {
 
       switch (category) {
         case 1:
-          results = await _jikan.getTopRatedAnime();
+          results = await _mal.getTopRatedAnime();
           break;
         case 2:
-          results = await _jikan.getCurrentlyAiringAnime();
+          results = await _mal.getCurrentlyAiringAnime();
           break;
         case 3:
-          results = await _jikan.getUpcomingAnime();
+          results = await _mal.getUpcomingAnime();
           break;
         case 4:
-          results = await _jikan.getSeasonalAnime();
+          results = await _mal.getSeasonalAnime();
           break;
         default:
           return;
@@ -554,11 +562,16 @@ class _AnimeScreenState extends State<AnimeScreen> {
                     child: CircularProgressIndicator(color: _teal),
                   ),
                 )
+              else if (_scheduleError.isNotEmpty)
+                _ErrorPanel(
+                  message: _scheduleError,
+                  onRetry: () => _loadSchedule(_selectedDay),
+                )
               else if (_schedule.isEmpty)
                 const _EmptyPanel(
                   icon: Icons.event_busy,
-                  title: 'No schedule available',
-                  message: 'There may be no listings for this day, or Jikan may be unavailable.',
+                  title: 'No upcoming episodes',
+                  message: 'No episodes are scheduled for this weekday in the next 14 days.',
                 )
               else
                 ..._schedule.map(

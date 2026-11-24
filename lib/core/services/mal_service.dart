@@ -137,6 +137,57 @@ class MalService {
     );
   }
 
+  Future<List<AnimeItem>> getTopRatedAnime() {
+    return _getAnimeList(
+      '/anime/ranking',
+      query: {
+        'ranking_type': 'all',
+        'limit': 18,
+        'fields': _fields,
+      },
+    );
+  }
+
+  Future<List<AnimeItem>> getCurrentlyAiringAnime() {
+    return _getAnimeList(
+      '/anime/ranking',
+      query: {
+        'ranking_type': 'airing',
+        'limit': 18,
+        'fields': _fields,
+      },
+    );
+  }
+
+  Future<List<AnimeItem>> getUpcomingAnime() {
+    return _getAnimeList(
+      '/anime/ranking',
+      query: {
+        'ranking_type': 'upcoming',
+        'limit': 18,
+        'fields': _fields,
+      },
+    );
+  }
+
+  Future<List<AnimeItem>> getSeasonalAnime() {
+    final now = DateTime.now();
+    final season = switch (now.month) {
+      1 || 2 || 3 => 'winter',
+      4 || 5 || 6 => 'spring',
+      7 || 8 || 9 => 'summer',
+      _ => 'fall',
+    };
+
+    return _getAnimeList(
+      '/anime/season/${now.year}/$season',
+      query: {
+        'limit': 18,
+        'fields': _fields,
+      },
+    );
+  }
+
   Future<List<AnimeItem>> searchAnime(String query) {
     return _getAnimeList(
       '/anime',

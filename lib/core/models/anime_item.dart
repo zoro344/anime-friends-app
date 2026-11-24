@@ -151,4 +151,82 @@ class AnimeItem {
       broadcastTime: broadcast is Map ? '${broadcast['time'] ?? ''}' : '',
     );
   }
+
+
+  factory AnimeItem.fromAniListSchedule(Map<String, dynamic> json) {
+    final media = json['media'] is Map
+        ? Map<String, dynamic>.from(json['media'] as Map)
+        : <String, dynamic>{};
+
+    final titles = media['title'] is Map
+        ? Map<String, dynamic>.from(media['title'] as Map)
+        : <String, dynamic>{};
+
+    final cover = media['coverImage'] is Map
+        ? Map<String, dynamic>.from(media['coverImage'] as Map)
+        : <String, dynamic>{};
+
+    final title = [
+      titles['english'],
+      titles['romaji'],
+      titles['native'],
+    ].firstWhere(
+      (value) => value != null && value.toString().trim().isNotEmpty,
+      orElse: () => 'Untitled',
+    ).toString();
+
+    final genres = media['genres'] is List
+        ? (media['genres'] as List)
+            .whereType<String>()
+            .where((value) => value.trim().isNotEmpty)
+            .toList()
+        : <String>[];
+
+    final airingAt = json['airingAt'];
+    final airingDate = airingAt is num
+        ? DateTime.fromMillisecondsSinceEpoch(
+            airingAt.toInt() * 1000,
+            isUtc: true,
+          ).toLocal()
+        : DateTime.now();
+
+    final hour = airingDate.hour % 12 == 0 ? 12 : airingDate.hour % 12;
+    final minute = airingDate.minute.toString().padLeft(2, '0');
+    final period = airingDate.hour >= 12 ? 'PM' : 'AM';
+    final episode = json['episode']?.toString() ?? '';
+
+    final averageScore = media['averageScore'];
+    final score = averageScore is num
+        ? (averageScore / 10).toStringAsFixed(2)
+        : '—';
+
+    return AnimeItem(
+      id: '${media['id'] ?? ''}',
+      name: title,
+      genre: genres.isEmpty
+          ? '${media['format'] ?? 'Anime'}'
+          : genres.join(' • '),
+      coverUrl: '${cover['large'] ?? cover['medium'] ?? ''}',
+      description: 'Upcoming episode $episode',
+      status: '${media['status'] ?? 'Unknown'}',
+      score: score,
+      url: '${media['siteUrl'] ?? ''}',
+      type: '${media['format'] ?? ''}',
+      episodes: '${media['episodes'] ?? 'Unknown'}',
+      year: '${media['seasonYear'] ?? ''}',
+      broadcastDay: [
+        'monday',
+        'tuesday',
+        'wednesday',
+        'thursday',
+        'friday',
+        'saturday',
+        'sunday',
+      ][airingDate.weekday - 1],
+      broadcastTime: episode.isEmpty
+          ? '$hour:$minute $period'
+          : 'Ep. $episode • $hour:$minute $period',
+    );
+  }
+
 }

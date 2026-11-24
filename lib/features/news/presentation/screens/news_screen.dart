@@ -96,7 +96,7 @@ class _NewsScreenState extends State<NewsScreen> {
             if (state.newsItems.isEmpty)
               const EmptyView(
                 title: 'No news available',
-                message: 'Configure anime RSS feeds on the backend or try again later.',
+                message: 'Check your internet connection or try again later.',
                 icon: Icons.newspaper_outlined,
               ),
             ...state.newsItems.map((item) {

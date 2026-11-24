@@ -11,11 +11,18 @@ import '../models/post_comment.dart';
 import '../models/watch_room.dart';
 import '../network/api_client.dart';
 import '../services/supabase_service.dart';
+import '../services/anime_news_service.dart';
 
 class AppState extends ChangeNotifier {
-  AppState({AnimeFriendsApi? api}) : api = api ?? AnimeFriendsApi();
+  AppState({
+    AnimeFriendsApi? api,
+    AnimeNewsService? newsService,
+  })  : api = api ?? AnimeFriendsApi(),
+        _newsService = newsService ?? AnimeNewsService();
 
   final AnimeFriendsApi api;
+  final AnimeNewsService _newsService;
+  int _newsRequestGeneration = 0;
   socket_io.Socket? _socket;
   String realtimeError = '';
   int chatEventRevision = 0;
@@ -737,57 +744,197 @@ class AppState extends ChangeNotifier {
 
   Future<void> _loadFriends() async {
     try {
-      final response = await api.get('/api/friends');
+      final client = SupabaseService.client;
+      final currentId = SupabaseService.currentUser?.id ?? userId;
+
+      if (currentId.isEmpty) {
+        throw StateError('You must be signed in to load friends.');
+      }
+
+      final acceptedRows = await client
+          .from('friend_requests')
+          .select(
+            'id,sender_id,receiver_id,'
+            'sender:profiles!friend_requests_sender_id_fkey(id,username),'
+            'receiver:profiles!friend_requests_receiver_id_fkey(id,username)',
+          )
+          .eq('status', 'accepted')
+          .or('sender_id.eq.$currentId,receiver_id.eq.$currentId');
+
+      final incomingRows = await client
+          .from('friend_requests')
+          .select(
+            'id,sender:profiles!friend_requests_sender_id_fkey(username)',
+          )
+          .eq('receiver_id', currentId)
+          .eq('status', 'pending')
+          .order('created_at', ascending: false);
+
       _friends
         ..clear()
-        ..addAll((response['friends'] as List<dynamic>? ?? [])
-            .whereType<Map<String, dynamic>>());
-      final requests = await api.get('/api/friends/requests');
+        ..addAll(acceptedRows.whereType<Map<String, dynamic>>().map((row) {
+          final sender = row['sender'] is Map
+              ? Map<String, dynamic>.from(row['sender'] as Map)
+              : <String, dynamic>{};
+
+          final receiver = row['receiver'] is Map
+              ? Map<String, dynamic>.from(row['receiver'] as Map)
+              : <String, dynamic>{};
+
+          final otherUser = row['sender_id'] == currentId
+              ? receiver
+              : sender;
+
+          return {
+            'id': '${otherUser['id'] ?? ''}',
+            'username': '${otherUser['username'] ?? 'Anime Friend'}',
+          };
+        }));
+
       _friendRequests
         ..clear()
-        ..addAll((requests['requests'] as List<dynamic>? ?? [])
-            .whereType<Map<String, dynamic>>());
+        ..addAll(incomingRows.whereType<Map<String, dynamic>>().map((row) {
+          final sender = row['sender'] is Map
+              ? Map<String, dynamic>.from(row['sender'] as Map)
+              : <String, dynamic>{};
+
+          return {
+            'id': '${row['id'] ?? ''}',
+            'user': sender,
+          };
+        }));
+
       friendError = '';
-    } on ApiException catch (error) {
-      friendError = error.message;
+    } catch (error) {
+      friendError = 'Could not load friends. Please refresh and try again.';
     }
   }
 
   Future<bool> sendFriendRequest(String usernameInput) async {
+    final targetUsername = usernameInput.trim().toLowerCase();
+
+    if (targetUsername.isEmpty) {
+      friendError = 'Enter a username.';
+      notifyListeners();
+      return false;
+    }
+
     try {
-      await api.post('/api/friends/request', body: {'username': usernameInput.trim()});
-      await _loadFriends();
+      final client = SupabaseService.client;
+      final currentId = SupabaseService.currentUser?.id ?? userId;
+
+      if (currentId.isEmpty) {
+        throw StateError('You must be signed in.');
+      }
+
+      final target = await client
+          .from('profiles')
+          .select('id,username')
+          .eq('username', targetUsername)
+          .maybeSingle();
+
+      if (target == null) {
+        friendError = 'No account found with that username.';
+        notifyListeners();
+        return false;
+      }
+
+      final targetId = '${target['id']}';
+
+      if (targetId == currentId) {
+        friendError = 'You cannot send a friend request to yourself.';
+        notifyListeners();
+        return false;
+      }
+
+      await client.from('friend_requests').insert({
+        'sender_id': currentId,
+        'receiver_id': targetId,
+      });
+
       friendError = 'Friend request sent.';
+      await _loadFriends();
+
+      if (friendError.isEmpty) {
+        friendError = 'Friend request sent.';
+      }
+
       notifyListeners();
       return true;
-    } on ApiException catch (error) {
-      friendError = error.message;
+    } catch (error) {
+      final message = error.toString().toLowerCase();
+
+      if (message.contains('friend_requests_unique_active_pair') ||
+          message.contains('duplicate key')) {
+        friendError = 'A pending request or friendship already exists.';
+      } else {
+        friendError = 'Could not send friend request. Please try again.';
+      }
+
       notifyListeners();
       return false;
     }
   }
 
-  Future<void> respondToFriendRequest(String requestId, {required bool accept}) async {
+  Future<void> respondToFriendRequest(
+    String requestId, {
+    required bool accept,
+  }) async {
     try {
-      if (accept) {
-        await api.post('/api/friends/requests/${Uri.encodeComponent(requestId)}/accept');
+      final client = SupabaseService.client;
+      final currentId = SupabaseService.currentUser?.id ?? userId;
+
+      final updated = await client
+          .from('friend_requests')
+          .update({'status': accept ? 'accepted' : 'rejected'})
+          .eq('id', requestId)
+          .eq('receiver_id', currentId)
+          .eq('status', 'pending')
+          .select('id');
+
+      if (updated.isEmpty) {
+        friendError = 'This friend request is no longer available.';
       } else {
-        await api.post('/api/friends/requests/${Uri.encodeComponent(requestId)}/reject');
+        await _loadFriends();
+        if (friendError.isEmpty) {
+          friendError = accept ? 'Friend request accepted.' : '';
+        }
       }
-      await _loadFriends();
-    } on ApiException catch (error) {
-      friendError = error.message;
+    } catch (error) {
+      friendError = 'Could not update this friend request. Please try again.';
     }
+
     notifyListeners();
   }
 
   Future<void> removeFriend(String friendId) async {
     try {
-      await api.delete('/api/friends/${Uri.encodeComponent(friendId)}');
+      final client = SupabaseService.client;
+      final currentId = SupabaseService.currentUser?.id ?? userId;
+
+      if (currentId.isEmpty || friendId.isEmpty || friendId == currentId) {
+        friendError = 'Invalid friend selection.';
+        notifyListeners();
+        return;
+      }
+
+      await client
+          .from('friend_requests')
+          .delete()
+          .eq('status', 'accepted')
+          .or(
+            'and(sender_id.eq.$currentId,receiver_id.eq.$friendId),'
+            'and(sender_id.eq.$friendId,receiver_id.eq.$currentId)',
+          );
+
       await _loadFriends();
-    } on ApiException catch (error) {
-      friendError = error.message;
+      if (friendError.isEmpty) {
+        friendError = '';
+      }
+    } catch (error) {
+      friendError = 'Could not remove this friend. Please try again.';
     }
+
     notifyListeners();
   }
 
@@ -847,21 +994,26 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> loadNews({String query = '', String category = ''}) async {
+    final requestId = ++_newsRequestGeneration;
+
     try {
-      final parameters = <String, String>{'page': '1', 'limit': '30'};
-      if (query.trim().isNotEmpty) parameters['q'] = query.trim();
-      if (category.isNotEmpty) {
-        parameters['category'] = category;
-      }
-      final response = await api.get('/api/news', query: parameters);
+      final articles = await _newsService.getNews(
+        query: query,
+        category: category,
+      );
+
+      if (requestId != _newsRequestGeneration) return;
+
       _newsItems
         ..clear()
-        ..addAll((response['items'] as List<dynamic>? ?? [])
-            .whereType<Map<String, dynamic>>());
+        ..addAll(articles);
       newsError = '';
-    } on ApiException catch (error) {
-      newsError = error.message;
+    } catch (_) {
+      if (requestId != _newsRequestGeneration) return;
+      newsError =
+          'Could not load anime news. Check your internet connection and retry.';
     }
+
     notifyListeners();
   }
 
@@ -1758,6 +1910,7 @@ class AppState extends ChangeNotifier {
   @override
   void dispose() {
     _socket?.dispose();
+    _newsService.dispose();
     api.dispose();
     super.dispose();
   }

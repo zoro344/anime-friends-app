@@ -6,6 +6,7 @@ import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 import '../models/anime_item.dart';
 import '../models/conversation.dart';
 import '../models/post.dart';
+import '../models/post_comment.dart';
 import '../models/watch_room.dart';
 import '../network/api_client.dart';
 import '../services/supabase_service.dart';
@@ -41,6 +42,12 @@ class AppState extends ChangeNotifier {
 
   final List<Post> _posts = [];
   List<Post> get posts => List.unmodifiable(_posts);
+
+  final Map<String, List<PostComment>> _commentsByPost = {};
+  String commentError = '';
+
+  List<PostComment> commentsForPost(String postId) =>
+      List.unmodifiable(_commentsByPost[postId] ?? []);
 
   final List<AnimeItem> _anime = [];
   int _animeSearchGeneration = 0;
@@ -559,6 +566,106 @@ class AppState extends ChangeNotifier {
     }
   }
 
+
+  Future<void> loadComments(String postId) async {
+    if (!isAuthenticated || !SupabaseService.isInitialized) {
+      commentError = 'Please sign in to view comments.';
+      notifyListeners();
+      return;
+    }
+
+    try {
+      final response = await SupabaseService.client
+          .from('post_comments')
+          .select('*, profiles!post_comments_user_id_fkey(username, display_name)')
+          .eq('post_id', postId)
+          .order('created_at');
+
+      _commentsByPost[postId] = (response as List)
+          .whereType<Map<String, dynamic>>()
+          .map(PostComment.fromSupabase)
+          .toList();
+
+      commentError = '';
+    } catch (_) {
+      commentError = 'Could not load comments. Please try again.';
+    }
+    notifyListeners();
+  }
+
+  Future<bool> addComment(String postId, String content) async {
+    final value = content.trim();
+
+    if (value.isEmpty || value.length > 1500) {
+      commentError = 'Comments must be between 1 and 1500 characters.';
+      notifyListeners();
+      return false;
+    }
+
+    if (!isAuthenticated || userId.isEmpty ||
+        !SupabaseService.isInitialized) {
+      commentError = 'Please sign in to comment.';
+      notifyListeners();
+      return false;
+    }
+
+    commentError = '';
+
+    try {
+      await SupabaseService.client.from('post_comments').insert({
+        'post_id': postId,
+        'user_id': userId,
+        'content': value,
+      });
+
+      // Saving succeeded, even if a later refresh fails.
+      await loadComments(postId);
+      await loadFeed();
+      return true;
+    } catch (_) {
+      commentError = 'Could not add your comment. Please try again.';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<void> editComment(
+    String commentId, String postId, String content,
+  ) async {
+    final value = content.trim();
+    if (value.isEmpty || value.length > 1500) return;
+    if (!isAuthenticated || !SupabaseService.isInitialized) return;
+
+    try {
+      await SupabaseService.client
+          .from('post_comments')
+          .update({'content': value})
+          .eq('id', commentId)
+          .eq('user_id', userId);
+      await loadComments(postId);
+    } catch (_) {
+      commentError = 'Could not edit your comment. Please try again.';
+      notifyListeners();
+    }
+  }
+
+  Future<void> deleteComment(String commentId, String postId) async {
+    if (!isAuthenticated || !SupabaseService.isInitialized) return;
+
+    try {
+      await SupabaseService.client
+          .from('post_comments')
+          .delete()
+          .eq('id', commentId)
+          .eq('user_id', userId);
+      await loadComments(postId);
+      await loadFeed();
+    } catch (_) {
+      commentError = 'Could not delete your comment. Please try again.';
+      notifyListeners();
+    }
+  }
+
   Future<void> toggleWatchlist(AnimeItem item) async {
     if (_watchlist.contains(item.name)) {
       await removeFromWatchlist(item.name);
@@ -931,6 +1038,8 @@ class AppState extends ChangeNotifier {
     activeRoomId = '';
     roomChatMessages.clear();
     _posts.clear();
+    _commentsByPost.clear();
+    commentError = '';
     _anime.clear();
     _watchlist.clear();
     _libraryIdsByTitle.clear();

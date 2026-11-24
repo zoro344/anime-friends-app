@@ -8,6 +8,7 @@ import '../../../../core/widgets/af_card.dart';
 import '../../../../core/widgets/af_text_field.dart';
 import '../../../../core/widgets/empty_view.dart';
 import '../../../../core/widgets/section_title.dart';
+import '../widgets/post_comments_sheet.dart';
 
 class FeedScreen extends StatefulWidget {
   const FeedScreen({super.key});
@@ -190,18 +191,45 @@ class _FeedScreenState extends State<FeedScreen> {
 
                       const SizedBox(width: 20),
 
-                      const Icon(
-                        Icons.mode_comment_outlined,
-                        size: 20,
-                        color: AppColors.iconMuted,
-                      ),
-
-                      const SizedBox(width: 7),
-
-                      Text(
-                        '${post.comments}',
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
+                      InkWell(
+                        borderRadius: BorderRadius.circular(8),
+                        onTap: () {
+                          showModalBottomSheet<void>(
+                            context: context,
+                            isScrollControlled: true,
+                            backgroundColor: AppColors.surface,
+                            shape: const RoundedRectangleBorder(
+                              borderRadius: BorderRadius.vertical(
+                                top: Radius.circular(20),
+                              ),
+                            ),
+                            builder: (_) => PostCommentsSheet(
+                              postId: post.id,
+                            ),
+                          );
+                        },
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 4,
+                            vertical: 8,
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.mode_comment_outlined,
+                                size: 20,
+                                color: AppColors.iconMuted,
+                              ),
+                              const SizedBox(width: 7),
+                              Text(
+                                '${post.comments}',
+                                style: const TextStyle(
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
 

@@ -20,17 +20,23 @@ class JikanService {
 
   final Dio _dio;
   DateTime? _lastRequest;
+  Future<void> _rateLimitQueue = Future<void>.value();
 
-  Future<void> _respectRateLimit() async {
-    final previous = _lastRequest;
-    if (previous != null) {
-      final elapsed = DateTime.now().difference(previous);
-      const minimumGap = Duration(milliseconds: 400);
-      if (elapsed < minimumGap) {
-        await Future<void>.delayed(minimumGap - elapsed);
+  Future<void> _respectRateLimit() {
+    final nextRequest = _rateLimitQueue.then((_) async {
+      final previous = _lastRequest;
+      if (previous != null) {
+        final elapsed = DateTime.now().difference(previous);
+        const minimumGap = Duration(milliseconds: 400);
+        if (elapsed < minimumGap) {
+          await Future<void>.delayed(minimumGap - elapsed);
+        }
       }
-    }
-    _lastRequest = DateTime.now();
+      _lastRequest = DateTime.now();
+    });
+
+    _rateLimitQueue = nextRequest.catchError((Object _) {});
+    return nextRequest;
   }
 
   Future<List<AnimeItem>> _getAnimeList(

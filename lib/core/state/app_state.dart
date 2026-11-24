@@ -593,7 +593,11 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> addComment(String postId, String content) async {
+  Future<bool> addComment(
+    String postId,
+    String content, {
+    String? parentCommentId,
+  }) async {
     final value = content.trim();
 
     if (value.isEmpty || value.length > 1500) {
@@ -616,6 +620,7 @@ class AppState extends ChangeNotifier {
         'post_id': postId,
         'user_id': userId,
         'content': value,
+        'parent_comment_id': parentCommentId,
       });
 
       // Saving succeeded, even if a later refresh fails.

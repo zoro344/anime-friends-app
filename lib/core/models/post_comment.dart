@@ -5,6 +5,7 @@ class PostComment {
   final String username;
   final String content;
   final DateTime createdAt;
+  final String? parentCommentId;
 
   const PostComment({
     required this.id,
@@ -13,10 +14,12 @@ class PostComment {
     required this.username,
     required this.content,
     required this.createdAt,
+    this.parentCommentId,
   });
 
   factory PostComment.fromSupabase(Map<String, dynamic> json) {
     final profile = json['profiles'] as Map<String, dynamic>? ?? {};
+    final parentId = json['parent_comment_id']?.toString();
 
     return PostComment(
       id: json['id'].toString(),
@@ -30,8 +33,12 @@ class PostComment {
             json['created_at']?.toString() ?? '',
           ) ??
           DateTime.now(),
+      parentCommentId:
+          parentId == null || parentId.isEmpty ? null : parentId,
     );
   }
 
   bool isMine(String currentUserId) => userId == currentUserId;
+
+  bool get isReply => parentCommentId != null;
 }

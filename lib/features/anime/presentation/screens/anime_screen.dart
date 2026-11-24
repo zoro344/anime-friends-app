@@ -6,6 +6,7 @@ import '../widgets/anime_reviews_section.dart';
 
 import '../../../../core/models/anime_item.dart';
 import '../../../../core/services/jikan_service.dart';
+import '../../../../core/services/mal_service.dart';
 import '../../../../core/state/app_state_scope.dart';
 
 const _purple = Color(0xFF9B6DFF);
@@ -25,6 +26,7 @@ class AnimeScreen extends StatefulWidget {
 
 class _AnimeScreenState extends State<AnimeScreen> {
   final JikanService _jikan = JikanService();
+  final MalService _mal = MalService();
   final TextEditingController _searchController = TextEditingController();
 
   Timer? _searchTimer;
@@ -68,6 +70,7 @@ class _AnimeScreenState extends State<AnimeScreen> {
     _searchTimer?.cancel();
     _searchController.dispose();
     _jikan.dispose();
+    _mal.dispose();
     super.dispose();
   }
 
@@ -78,7 +81,7 @@ class _AnimeScreenState extends State<AnimeScreen> {
     });
 
     try {
-      final results = await _jikan.getPopularAnime();
+      final results = await _mal.getPopularAnime();
       if (!mounted) return;
 
       setState(() {
@@ -140,7 +143,7 @@ class _AnimeScreenState extends State<AnimeScreen> {
     });
 
     try {
-      final results = await _jikan.searchAnime(query);
+      final results = await _mal.searchAnime(query);
       if (!mounted || _searchController.text.trim() != query) return;
 
       setState(() {
@@ -184,7 +187,7 @@ class _AnimeScreenState extends State<AnimeScreen> {
 
     if (malId != null) {
       try {
-        details = await _jikan.getAnimeDetails(malId);
+        details = await _mal.getAnimeDetails(malId);
       } catch (_) {
         // Keep the available list information if details cannot load.
       }
@@ -325,7 +328,7 @@ class _AnimeScreenState extends State<AnimeScreen> {
                   ),
                   const SizedBox(height: 10),
                   const Text(
-                    'Anime information provided by MyAnimeList through Jikan.',
+                    'Anime information provided by MyAnimeList.',
                     style: TextStyle(color: Colors.white38, fontSize: 11),
                   ),
                 ],
@@ -436,7 +439,7 @@ class _AnimeScreenState extends State<AnimeScreen> {
                 const _EmptyPanel(
                   icon: Icons.movie_filter_outlined,
                   title: 'No anime available',
-                  message: 'Jikan did not return any popular anime.',
+                  message: 'MyAnimeList did not return any popular anime.',
                 )
               else
                 ..._popular.map(

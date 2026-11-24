@@ -468,10 +468,9 @@ class AppState extends ChangeNotifier {
       final response = await SupabaseService.client
           .from('manga_library')
           .insert({
-            'user_id': userId,
             'manga_id': mangaId,
             'manga_title': item.name,
-            'cover_url': item.coverUrl.isEmpty ? null : item.coverUrl,
+            'cover_url': item.coverUrl,
             'status': 'plan_to_read',
           })
           .select(
@@ -487,7 +486,9 @@ class AppState extends ChangeNotifier {
       mangaError = '';
       notifyListeners();
       return true;
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('Manga library insert failed: $error');
+      debugPrintStack(stackTrace: stackTrace);
       mangaError = 'Could not add this manga. Please try again.';
       notifyListeners();
       return false;

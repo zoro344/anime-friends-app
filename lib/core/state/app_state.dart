@@ -347,23 +347,33 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _loadLibrary() async {
-    if (!SupabaseService.isInitialized || userId.isEmpty) {
-      return;
-    }
+    if (!SupabaseService.isInitialized || userId.isEmpty) return;
 
     try {
-      final response = await SupabaseService.client
-          .from('anime_library')
-          .select(
-            'id, anime_id, anime_title, cover_url, status, '
-            'episodes_watched, total_episodes, personal_rating, '
-            'started_at, completed_at',
-          )
-          .eq('user_id', userId);
+      const pageSize = 200;
+      var offset = 0;
+      final rows = <Map<String, dynamic>>[];
 
-      final rows = (response as List<dynamic>)
-          .whereType<Map<String, dynamic>>()
-          .toList();
+      while (true) {
+        final response = await SupabaseService.client
+            .from('anime_library')
+            .select(
+              'id, anime_id, anime_title, cover_url, status, '
+              'episodes_watched, total_episodes, personal_rating, '
+              'started_at, completed_at, rewatch_count, priority, notes',
+            )
+            .eq('user_id', userId)
+            .order('id')
+            .range(offset, offset + pageSize - 1);
+
+        final page = (response as List<dynamic>)
+            .whereType<Map<String, dynamic>>()
+            .toList();
+
+        rows.addAll(page);
+        if (page.length < pageSize) break;
+        offset += pageSize;
+      }
 
       _watchlist.clear();
       _libraryIdsByTitle.clear();
@@ -372,12 +382,12 @@ class AppState extends ChangeNotifier {
       for (final row in rows) {
         final title = '${row['anime_title'] ?? ''}';
         final animeId = '${row['anime_id'] ?? ''}';
-
         if (title.isEmpty || animeId.isEmpty) continue;
 
         _watchlist.add(title);
         _libraryIdsByTitle[title] = animeId;
-        _animeLibraryEntriesById[animeId] = Map<String, dynamic>.from(row);
+        _animeLibraryEntriesById[animeId] =
+            Map<String, dynamic>.from(row);
       }
 
       animeError = '';
@@ -386,25 +396,35 @@ class AppState extends ChangeNotifier {
     }
   }
 
-
   Future<void> _loadMangaLibrary() async {
-    if (!SupabaseService.isInitialized || userId.isEmpty) {
-      return;
-    }
+    if (!SupabaseService.isInitialized || userId.isEmpty) return;
 
     try {
-      final response = await SupabaseService.client
-          .from('manga_library')
-          .select(
-            'id, manga_id, manga_title, cover_url, status, '
-            'chapters_read, total_chapters, volumes_read, total_volumes, '
-            'personal_rating, started_at, completed_at',
-          )
-          .eq('user_id', userId);
+      const pageSize = 200;
+      var offset = 0;
+      final rows = <Map<String, dynamic>>[];
 
-      final rows = (response as List<dynamic>)
-          .whereType<Map<String, dynamic>>()
-          .toList();
+      while (true) {
+        final response = await SupabaseService.client
+            .from('manga_library')
+            .select(
+              'id, manga_id, manga_title, cover_url, status, '
+              'chapters_read, total_chapters, volumes_read, total_volumes, '
+              'personal_rating, started_at, completed_at, '
+              'reread_count, priority, notes',
+            )
+            .eq('user_id', userId)
+            .order('id')
+            .range(offset, offset + pageSize - 1);
+
+        final page = (response as List<dynamic>)
+            .whereType<Map<String, dynamic>>()
+            .toList();
+
+        rows.addAll(page);
+        if (page.length < pageSize) break;
+        offset += pageSize;
+      }
 
       _mangaLibraryEntriesById.clear();
 
@@ -457,7 +477,7 @@ class AppState extends ChangeNotifier {
           .select(
             'id, manga_id, manga_title, cover_url, status, '
             'chapters_read, total_chapters, volumes_read, total_volumes, '
-            'personal_rating, started_at, completed_at',
+            'personal_rating, started_at, completed_at, reread_count, priority, notes',
           )
           .single();
 
@@ -482,6 +502,9 @@ class AppState extends ChangeNotifier {
     int? volumesRead,
     int? totalVolumes,
     int? personalRating,
+    int? rereadCount,
+    int? priority,
+    String? notes,
   }) async {
     mangaError = '';
 
@@ -519,6 +542,14 @@ class AppState extends ChangeNotifier {
         personalRating != null &&
             (personalRating < 1 || personalRating > 10)) {
       mangaError = 'Check your chapter, volume, and rating values.';
+      notifyListeners();
+      return false;
+    }
+
+    if ((rereadCount != null && rereadCount < 0) ||
+        (priority != null && (priority < 1 || priority > 3)) ||
+        (notes != null && notes.length > 500)) {
+      mangaError = 'Check reread count, priority, and notes (maximum 500 characters).';
       notifyListeners();
       return false;
     }
@@ -570,9 +601,30 @@ class AppState extends ChangeNotifier {
     if (personalRating != null) {
       updates['personal_rating'] = personalRating;
     }
+    if (rereadCount != null) updates['reread_count'] = rereadCount;
+    if (priority != null) updates['priority'] = priority;
+    if (notes != null) {
+      updates['notes'] = notes.trim().isEmpty ? null : notes.trim();
+    }
 
     final today = DateTime.now().toIso8601String().split('T').first;
-    final effectiveStatus = status ?? current['status']?.toString();
+    var effectiveStatus = status ?? current['status']?.toString();
+
+    if (status == null && chaptersRead != null) {
+      if (effectiveTotalChapters != null &&
+          effectiveChapters >= effectiveTotalChapters) {
+        effectiveStatus = 'completed';
+      } else if (effectiveStatus == 'completed' &&
+          effectiveTotalChapters != null &&
+          effectiveChapters < effectiveTotalChapters) {
+        effectiveStatus = 'reading';
+      } else if (effectiveStatus == 'plan_to_read') {
+        effectiveStatus = 'reading';
+      }
+      if (effectiveStatus != current['status']) {
+        updates['status'] = effectiveStatus;
+      }
+    }
 
     if ((effectiveStatus == 'reading' ||
             effectiveStatus == 'completed') &&
@@ -584,7 +636,8 @@ class AppState extends ChangeNotifier {
       if (current['completed_at'] == null) {
         updates['completed_at'] = today;
       }
-    } else if (status != null) {
+    } else if (status != null ||
+        effectiveStatus != current['status']) {
       updates['completed_at'] = null;
     }
 
@@ -1004,7 +1057,7 @@ class AppState extends ChangeNotifier {
           .select(
             'id, anime_id, anime_title, cover_url, status, '
             'episodes_watched, total_episodes, personal_rating, '
-            'started_at, completed_at',
+            'started_at, completed_at, rewatch_count, priority, notes',
           )
           .single();
 
@@ -1052,6 +1105,9 @@ class AppState extends ChangeNotifier {
     int? episodesWatched,
     int? totalEpisodes,
     int? personalRating,
+    int? rewatchCount,
+    int? priority,
+    String? notes,
   }) async {
     animeError = '';
 
@@ -1097,6 +1153,14 @@ class AppState extends ChangeNotifier {
       return;
     }
 
+    if ((rewatchCount != null && rewatchCount < 0) ||
+        (priority != null && (priority < 1 || priority > 3)) ||
+        (notes != null && notes.length > 500)) {
+      animeError = 'Check rewatch count, priority, and notes (maximum 500 characters).';
+      notifyListeners();
+      return;
+    }
+
     final currentLibraryEntry = _animeLibraryEntriesById[animeId];
     final currentTotal = currentLibraryEntry?['total_episodes'];
     final currentProgress = currentLibraryEntry?['episodes_watched'];
@@ -1123,10 +1187,30 @@ class AppState extends ChangeNotifier {
     if (personalRating != null) {
       updates['personal_rating'] = personalRating;
     }
+    if (rewatchCount != null) updates['rewatch_count'] = rewatchCount;
+    if (priority != null) updates['priority'] = priority;
+    if (notes != null) {
+      updates['notes'] = notes.trim().isEmpty ? null : notes.trim();
+    }
 
     final today = DateTime.now().toIso8601String().split('T').first;
-    final effectiveStatus =
+    var effectiveStatus =
         status ?? currentLibraryEntry?['status']?.toString();
+
+    if (status == null && episodesWatched != null) {
+      if (effectiveTotal != null && effectiveProgress >= effectiveTotal) {
+        effectiveStatus = 'completed';
+      } else if (effectiveStatus == 'completed' &&
+          effectiveTotal != null &&
+          effectiveProgress < effectiveTotal) {
+        effectiveStatus = 'watching';
+      } else if (effectiveStatus == 'plan_to_watch') {
+        effectiveStatus = 'watching';
+      }
+      if (effectiveStatus != currentLibraryEntry?['status']) {
+        updates['status'] = effectiveStatus;
+      }
+    }
 
     if (effectiveStatus == 'watching' ||
         effectiveStatus == 'completed') {
@@ -1139,7 +1223,8 @@ class AppState extends ChangeNotifier {
       if (currentLibraryEntry?['completed_at'] == null) {
         updates['completed_at'] = today;
       }
-    } else if (status != null) {
+    } else if (status != null ||
+        effectiveStatus != currentLibraryEntry?['status']) {
       updates['completed_at'] = null;
     }
 
@@ -1191,7 +1276,7 @@ class AppState extends ChangeNotifier {
     }
 
     final total = entry?['total_episodes'];
-    if (total is int && episodeNumber > total) {
+    if (total is num && episodeNumber > total) {
       animeError = 'Episode number exceeds the total episode count.';
       notifyListeners();
       return;
@@ -1199,27 +1284,24 @@ class AppState extends ChangeNotifier {
 
     try {
       animeError = '';
-      await SupabaseService.client
-          .from('anime_episode_history')
-          .upsert(
-            {
-              'library_id': libraryId,
-              'episode_number': episodeNumber,
-            },
-            onConflict: 'library_id,episode_number',
-            ignoreDuplicates: true,
-          );
+      await SupabaseService.client.from('anime_episode_history').upsert(
+        {
+          'library_id': libraryId,
+          'episode_number': episodeNumber,
+        },
+        onConflict: 'library_id,episode_number',
+        ignoreDuplicates: true,
+      );
 
       final currentProgress = entry?['episodes_watched'];
-      final progress = currentProgress is int ? currentProgress : 0;
+      final progress =
+          currentProgress is num ? currentProgress.toInt() : 0;
 
       if (episodeNumber > progress) {
         await updateAnimeLibraryEntry(
           animeId: animeId,
           episodesWatched: episodeNumber,
-          status: entry?['status'] == 'plan_to_watch' ? 'watching' : null,
         );
-        if (animeError.isNotEmpty) return;
       } else {
         animeError = '';
         notifyListeners();
@@ -1228,6 +1310,94 @@ class AppState extends ChangeNotifier {
       animeError = 'Could not record this episode. Please try again.';
       notifyListeners();
     }
+  }
+
+  Future<void> markNextEpisodeWatched(String animeId) async {
+    final entry = _animeLibraryEntriesById[animeId];
+    if (entry == null) {
+      animeError = 'Add this anime to your library first.';
+      notifyListeners();
+      return;
+    }
+
+    final current = entry['episodes_watched'];
+    final nextEpisode = (current is num ? current.toInt() : 0) + 1;
+    await markEpisodeWatched(
+      animeId: animeId,
+      episodeNumber: nextEpisode,
+    );
+  }
+
+  Future<void> markChapterRead({
+    required String mangaId,
+    required int chapterNumber,
+  }) async {
+    final entry = _mangaLibraryEntriesById[mangaId];
+    final libraryId = entry?['id']?.toString();
+
+    if (libraryId == null || libraryId.isEmpty || userId.isEmpty) {
+      mangaError = 'Add this manga to your library first.';
+      notifyListeners();
+      return;
+    }
+
+    if (chapterNumber <= 0) {
+      mangaError = 'Chapter number must be greater than zero.';
+      notifyListeners();
+      return;
+    }
+
+    final total = entry?['total_chapters'];
+    if (total is num && chapterNumber > total) {
+      mangaError = 'Chapter number exceeds the total chapter count.';
+      notifyListeners();
+      return;
+    }
+
+    try {
+      mangaError = '';
+      await SupabaseService.client.from('manga_chapter_history').upsert(
+        {
+          'library_id': libraryId,
+          'chapter_number': chapterNumber,
+        },
+        onConflict: 'library_id,chapter_number',
+        ignoreDuplicates: true,
+      );
+
+      final currentProgress = entry?['chapters_read'];
+      final progress =
+          currentProgress is num ? currentProgress.toInt() : 0;
+
+      if (chapterNumber > progress) {
+        await updateMangaLibraryEntry(
+          mangaId: mangaId,
+          chaptersRead: chapterNumber,
+        );
+      } else {
+        mangaError = '';
+        notifyListeners();
+      }
+    } catch (_) {
+      mangaError = 'Could not record this chapter. Please try again.';
+      notifyListeners();
+    }
+  }
+
+  Future<void> markNextChapterRead(String mangaId) async {
+    final entry = _mangaLibraryEntriesById[mangaId];
+    if (entry == null) {
+      mangaError = 'Add this manga to your library first.';
+      notifyListeners();
+      return;
+    }
+
+    final current = entry['chapters_read'];
+    final nextChapter = (current is num ? current.toInt() : 0) + 1;
+    await markChapterRead(
+      mangaId: mangaId,
+      chapterNumber: nextChapter,
+    );
   }
 
   Future<Map<String, dynamic>?> createIntegratedWatchRoom({

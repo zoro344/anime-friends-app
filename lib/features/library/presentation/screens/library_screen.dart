@@ -78,6 +78,15 @@ class _LibraryScreenState extends State<LibraryScreen>
     final rating = TextEditingController(
       text: ratingValue == null ? '' : '$ratingValue',
     );
+    final rewatchCount = TextEditingController(
+      text: '${entry['rewatch_count'] ?? 0}',
+    );
+    final priority = TextEditingController(
+      text: '${entry['priority'] ?? 2}',
+    );
+    final notes = TextEditingController(
+      text: '${entry['notes'] ?? ''}',
+    );
 
     await showDialog<void>(
       context: context,
@@ -133,6 +142,21 @@ class _LibraryScreenState extends State<LibraryScreen>
                     labelText: 'Your rating (1–10, optional)',
                   ),
                 ),
+                const SizedBox(height: 12),
+                _numberField(rewatchCount, 'Rewatch count'),
+                _numberField(
+                  priority,
+                  'Priority (1 = low, 2 = normal, 3 = high)',
+                ),
+                TextField(
+                  controller: notes,
+                  maxLength: 500,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Notes (optional)',
+                    alignLabelWithHint: true,
+                  ),
+                ),
               ],
             ),
           ),
@@ -150,12 +174,21 @@ class _LibraryScreenState extends State<LibraryScreen>
                 final personalRating = rating.text.trim().isEmpty
                     ? null
                     : int.tryParse(rating.text.trim());
+                final rewatch = int.tryParse(rewatchCount.text.trim());
+                final priorityValue = int.tryParse(priority.text.trim());
+                final notesValue = notes.text.trim();
 
                 if (watched == null ||
                     (total.text.trim().isNotEmpty &&
                         totalEpisodes == null) ||
                     (rating.text.trim().isNotEmpty &&
-                        personalRating == null)) {
+                        personalRating == null) ||
+                    rewatch == null ||
+                    rewatch < 0 ||
+                    priorityValue == null ||
+                    priorityValue < 1 ||
+                    priorityValue > 3 ||
+                    notesValue.length > 500) {
                   ScaffoldMessenger.of(this.context).showSnackBar(
                     const SnackBar(
                       content: Text('Enter valid whole numbers.'),
@@ -170,6 +203,9 @@ class _LibraryScreenState extends State<LibraryScreen>
                   episodesWatched: watched,
                   totalEpisodes: totalEpisodes,
                   personalRating: personalRating,
+                  rewatchCount: rewatch,
+                  priority: priorityValue,
+                  notes: notesValue,
                 );
 
                 if (!mounted) return;
@@ -195,6 +231,9 @@ class _LibraryScreenState extends State<LibraryScreen>
     episodes.dispose();
     total.dispose();
     rating.dispose();
+    rewatchCount.dispose();
+    priority.dispose();
+    notes.dispose();
   }
 
   Future<void> _editManga(
@@ -225,6 +264,15 @@ class _LibraryScreenState extends State<LibraryScreen>
       text: entry['personal_rating'] == null
           ? ''
           : '${entry['personal_rating']}',
+    );
+    final rereadCount = TextEditingController(
+      text: '${entry['reread_count'] ?? 0}',
+    );
+    final priority = TextEditingController(
+      text: '${entry['priority'] ?? 2}',
+    );
+    final notes = TextEditingController(
+      text: '${entry['notes'] ?? ''}',
     );
 
     await showDialog<void>(
@@ -264,6 +312,21 @@ class _LibraryScreenState extends State<LibraryScreen>
                 _numberField(volumes, 'Volumes read'),
                 _numberField(totalVolumes, 'Total volumes (optional)'),
                 _numberField(rating, 'Your rating (1–10, optional)'),
+                const SizedBox(height: 12),
+                _numberField(rereadCount, 'Reread count'),
+                _numberField(
+                  priority,
+                  'Priority (1 = low, 2 = normal, 3 = high)',
+                ),
+                TextField(
+                  controller: notes,
+                  maxLength: 500,
+                  maxLines: 3,
+                  decoration: const InputDecoration(
+                    labelText: 'Notes (optional)',
+                    alignLabelWithHint: true,
+                  ),
+                ),
               ],
             ),
           ),
@@ -284,6 +347,9 @@ class _LibraryScreenState extends State<LibraryScreen>
                 final volumeCount = parseOptional(volumes);
                 final volumeTotal = parseOptional(totalVolumes);
                 final personalRating = parseOptional(rating);
+                final reread = int.tryParse(rereadCount.text.trim());
+                final priorityValue = int.tryParse(priority.text.trim());
+                final notesValue = notes.text.trim();
 
                 if (chapterCount == null ||
                     volumeCount == null ||
@@ -292,7 +358,13 @@ class _LibraryScreenState extends State<LibraryScreen>
                     (totalVolumes.text.trim().isNotEmpty &&
                         volumeTotal == null) ||
                     (rating.text.trim().isNotEmpty &&
-                        personalRating == null)) {
+                        personalRating == null) ||
+                    reread == null ||
+                    reread < 0 ||
+                    priorityValue == null ||
+                    priorityValue < 1 ||
+                    priorityValue > 3 ||
+                    notesValue.length > 500) {
                   ScaffoldMessenger.of(this.context).showSnackBar(
                     const SnackBar(
                       content: Text('Enter valid whole numbers.'),
@@ -309,6 +381,9 @@ class _LibraryScreenState extends State<LibraryScreen>
                   volumesRead: volumeCount,
                   totalVolumes: volumeTotal,
                   personalRating: personalRating,
+                  rereadCount: reread,
+                  priority: priorityValue,
+                  notes: notesValue,
                 );
 
                 if (!mounted) return;
@@ -342,6 +417,9 @@ class _LibraryScreenState extends State<LibraryScreen>
     volumes.dispose();
     totalVolumes.dispose();
     rating.dispose();
+    rereadCount.dispose();
+    priority.dispose();
+    notes.dispose();
   }
 
   Widget _numberField(
@@ -512,6 +590,9 @@ class _LibraryScreenState extends State<LibraryScreen>
               : '$watched / $total episodes',
           onEdit: () => _editAnime(state, entry),
           onRemove: () => _removeAnime(state, entry),
+          onProgress: () {
+            state.markNextEpisodeWatched('${entry['anime_id'] ?? ''}');
+          },
         );
       },
     );
@@ -551,6 +632,9 @@ class _LibraryScreenState extends State<LibraryScreen>
           progress: progress,
           onEdit: () => _editManga(state, entry),
           onRemove: () => _removeManga(state, entry),
+          onProgress: () {
+            state.markNextChapterRead('${entry['manga_id'] ?? ''}');
+          },
         );
       },
     );
@@ -563,6 +647,7 @@ class _LibraryScreenState extends State<LibraryScreen>
     required String progress,
     required VoidCallback onEdit,
     required VoidCallback onRemove,
+    required VoidCallback onProgress,
   }) {
     return Container(
       padding: const EdgeInsets.all(11),
@@ -616,6 +701,14 @@ class _LibraryScreenState extends State<LibraryScreen>
                   ),
                 ),
               ],
+            ),
+          ),
+          IconButton(
+            tooltip: 'Mark next episode/chapter',
+            onPressed: onProgress,
+            icon: const Icon(
+              Icons.add_circle_outline,
+              color: _purple,
             ),
           ),
           PopupMenuButton<String>(

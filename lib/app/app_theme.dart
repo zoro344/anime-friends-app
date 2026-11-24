@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 import 'app_colors.dart';
 import 'app_typography.dart';
 
@@ -12,13 +13,14 @@ class AppTheme {
       fontFamily: 'Roboto',
       colorScheme: const ColorScheme.dark(
         primary: AppColors.primary,
-        onPrimary: AppColors.background,
-        secondary: AppColors.primary,
+        onPrimary: Colors.white,
+        secondary: AppColors.secondary,
         onSecondary: AppColors.background,
+        tertiary: AppColors.tertiary,
         surface: AppColors.surface,
         onSurface: AppColors.textPrimary,
         error: AppColors.error,
-        onError: AppColors.background,
+        onError: Colors.white,
       ),
       scaffoldBackgroundColor: AppColors.background,
     );
@@ -67,14 +69,14 @@ class AppTheme {
           borderRadius: BorderRadius.circular(14),
           borderSide: const BorderSide(
             color: AppColors.primary,
-            width: 1.2,
+            width: 1.4,
           ),
         ),
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.primary,
-          foregroundColor: AppColors.background,
+          foregroundColor: Colors.white,
           disabledBackgroundColor: AppColors.surfaceElevated,
           disabledForegroundColor: AppColors.textDisabled,
           elevation: 0,
@@ -106,7 +108,7 @@ class AppTheme {
       ),
       navigationBarTheme: const NavigationBarThemeData(
         backgroundColor: AppColors.background,
-        indicatorColor: AppColors.surfaceElevated,
+        indicatorColor: Color(0xFF39275B),
         elevation: 0,
         labelTextStyle: WidgetStatePropertyAll(
           TextStyle(
@@ -115,6 +117,12 @@ class AppTheme {
             fontWeight: FontWeight.w500,
           ),
         ),
+      ),
+      chipTheme: base.chipTheme.copyWith(
+        backgroundColor: AppColors.surface,
+        selectedColor: const Color(0xFF39275B),
+        side: const BorderSide(color: AppColors.border),
+        labelStyle: const TextStyle(color: AppColors.textPrimary),
       ),
     );
   }

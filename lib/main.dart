@@ -1,18 +1,17 @@
 import 'package:flutter/material.dart';
 
-import 'features/auth/presentation/screens/auth_screen.dart';
-
 import 'app/app_theme.dart';
-import 'core/state/app_state.dart';
 import 'core/services/supabase_service.dart';
+import 'core/state/app_state.dart';
 import 'core/state/app_state_scope.dart';
-import 'features/feed/presentation/screens/feed_screen.dart';
 import 'features/anime/presentation/screens/anime_screen.dart';
-import 'features/watch/presentation/screens/watch_screen.dart';
+import 'features/auth/presentation/screens/auth_screen.dart';
 import 'features/chats/presentation/screens/chats_screen.dart';
-import 'features/profile/presentation/screens/profile_screen.dart';
-import 'features/notifications/presentation/screens/notifications_screen.dart';
+import 'features/feed/presentation/screens/feed_screen.dart';
 import 'features/news/presentation/screens/news_screen.dart';
+import 'features/notifications/presentation/screens/notifications_screen.dart';
+import 'features/profile/presentation/screens/profile_screen.dart';
+import 'features/watch/presentation/screens/watch_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -64,13 +63,15 @@ class _AnimeFriendsAppState extends State<AnimeFriendsApp> {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'Anime Friends',
-      theme: AppTheme.dark,
-      home: AppStateScope(
-        state: _appState,
-        child: Builder(
+    // The scope must wrap MaterialApp so Navigator-pushed routes
+    // such as News, Notifications and Friends can access AppState.
+    return AppStateScope(
+      state: _appState,
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        title: 'Anime Friends',
+        theme: AppTheme.dark,
+        home: Builder(
           builder: (context) {
             final state = AppStateScope.of(context);
 
@@ -126,14 +127,19 @@ class _MainScreenState extends State<MainScreen> {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                color: Colors.white,
+                gradient: const LinearGradient(
+                  colors: [
+                    Color(0xFF8B5CF6),
+                    Color(0xFF38BDF8),
+                  ],
+                ),
                 borderRadius: BorderRadius.circular(11),
               ),
               child: const Center(
                 child: Text(
                   'AF',
                   style: TextStyle(
-                    color: Colors.black,
+                    color: Colors.white,
                     fontWeight: FontWeight.w900,
                     fontSize: 16,
                   ),

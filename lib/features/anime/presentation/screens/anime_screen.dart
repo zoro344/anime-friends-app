@@ -1,13 +1,20 @@
-import 'package:flutter/material.dart';
+import 'dart:async';
 
-import '../../../../app/app_colors.dart';
-import '../../../../app/app_typography.dart';
+import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
+import '../widgets/anime_reviews_section.dart';
+
+import '../../../../core/models/anime_item.dart';
+import '../../../../core/services/jikan_service.dart';
 import '../../../../core/state/app_state_scope.dart';
-import '../../../../core/widgets/af_card.dart';
-import '../../../../core/widgets/af_text_field.dart';
-import '../../../../core/widgets/empty_view.dart';
-import '../../../../core/widgets/section_title.dart';
-import '../../../news/presentation/screens/news_screen.dart';
+
+const _purple = Color(0xFF9B6DFF);
+const _blue = Color(0xFF579BFF);
+const _pink = Color(0xFFFF70B8);
+const _teal = Color(0xFF48DCC5);
+const _orange = Color(0xFFFFB45E);
+const _background = Color(0xFF08060D);
+const _surface = Color(0xFF171220);
 
 class AnimeScreen extends StatefulWidget {
   const AnimeScreen({super.key});
@@ -17,245 +24,890 @@ class AnimeScreen extends StatefulWidget {
 }
 
 class _AnimeScreenState extends State<AnimeScreen> {
-  final TextEditingController searchController =
-      TextEditingController();
+  final JikanService _jikan = JikanService();
+  final TextEditingController _searchController = TextEditingController();
 
-  String query = '';
+  Timer? _searchTimer;
+
+  List<AnimeItem> _popular = [];
+  List<AnimeItem> _searchResults = [];
+  List<AnimeItem> _schedule = [];
+
+  bool _loadingPopular = true;
+  bool _loadingSearch = false;
+  bool _loadingSchedule = false;
+
+  String _error = '';
+  String _searchError = '';
+  String _selectedDay = _todayName();
+  int _selectedTab = 0;
+
+  static const _days = [
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+
+  static String _todayName() {
+    return _days[DateTime.now().weekday - 1];
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadPopular();
+    _loadSchedule(_selectedDay);
+  }
 
   @override
   void dispose() {
-    searchController.dispose();
+    _searchTimer?.cancel();
+    _searchController.dispose();
+    _jikan.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadPopular() async {
+    setState(() {
+      _loadingPopular = true;
+      _error = '';
+    });
+
+    try {
+      final results = await _jikan.getPopularAnime();
+      if (!mounted) return;
+
+      setState(() {
+        _popular = results;
+        _loadingPopular = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _error = _cleanError(error);
+        _loadingPopular = false;
+      });
+    }
+  }
+
+  Future<void> _loadSchedule(String day) async {
+    setState(() {
+      _loadingSchedule = true;
+    });
+
+    try {
+      final results = await _jikan.getSchedule(day);
+      if (!mounted) return;
+
+      setState(() {
+        _schedule = results;
+        _loadingSchedule = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _schedule = [];
+        _loadingSchedule = false;
+      });
+    }
+  }
+
+  void _onSearchChanged(String value) {
+    _searchTimer?.cancel();
+
+    if (value.trim().isEmpty) {
+      setState(() {
+        _searchResults = [];
+        _searchError = '';
+        _loadingSearch = false;
+      });
+      return;
+    }
+
+    _searchTimer = Timer(const Duration(milliseconds: 550), () {
+      _searchAnime(value.trim());
+    });
+  }
+
+  Future<void> _searchAnime(String query) async {
+    setState(() {
+      _loadingSearch = true;
+      _searchError = '';
+    });
+
+    try {
+      final results = await _jikan.searchAnime(query);
+      if (!mounted || _searchController.text.trim() != query) return;
+
+      setState(() {
+        _searchResults = results;
+        _loadingSearch = false;
+      });
+    } catch (error) {
+      if (!mounted) return;
+      setState(() {
+        _searchError = _cleanError(error);
+        _loadingSearch = false;
+      });
+    }
+  }
+
+  String _cleanError(Object error) {
+    return error.toString().replaceFirst('Exception: ', '');
+  }
+
+  Future<void> _shareAnime(AnimeItem anime) async {
+    final details = [
+      anime.name,
+      if (anime.genre.isNotEmpty) 'Genres: ${anime.genre}',
+      if (anime.score.isNotEmpty) 'MAL score: ${anime.score}',
+      if (anime.url.isNotEmpty) anime.url,
+      'Shared from Anime Friends',
+    ].join('\n');
+
+    await SharePlus.instance.share(
+      ShareParams(
+        text: details,
+        subject: 'Check out ${anime.name}',
+      ),
+    );
+  }
+
+  Future<void> _openDetails(AnimeItem anime) async {
+    final appState = AppStateScope.of(context);
+    AnimeItem details = anime;
+    final malId = int.tryParse(anime.id);
+
+    if (malId != null) {
+      try {
+        details = await _jikan.getAnimeDetails(malId);
+      } catch (_) {
+        // Keep the available list information if details cannot load.
+      }
+    }
+
+    if (!mounted) return;
+
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: _surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(26)),
+      ),
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _AnimePoster(anime: details, width: 112, height: 154),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              details.name,
+                              style: const TextStyle(
+                                fontSize: 20,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                            const SizedBox(height: 9),
+                            _InfoChip(
+                              icon: Icons.star_rounded,
+                              label: details.score,
+                              color: _orange,
+                            ),
+                            const SizedBox(height: 7),
+                            Text(
+                              [
+                                details.type,
+                                if (details.episodes.isNotEmpty)
+                                  '${details.episodes} episodes',
+                                details.status,
+                              ].where((e) => e.isNotEmpty).join(' • '),
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                            if (details.year.isNotEmpty) ...[
+                              const SizedBox(height: 7),
+                              Text(
+                                [
+                                  details.season,
+                                  details.year,
+                                ].where((e) => e.isNotEmpty).join(' '),
+                                style: const TextStyle(
+                                  color: _teal,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 22),
+                  const Text(
+                    'Synopsis',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 17,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    details.description,
+                    style: const TextStyle(
+                      color: Colors.white70,
+                      height: 1.5,
+                    ),
+                  ),
+                  if (int.tryParse(details.id) != null) ...[
+                    const SizedBox(height: 24),
+                    AnimeReviewsSection(
+                      key: ValueKey('reviews-${details.id}'),
+                      animeId: int.parse(details.id),
+                      isAuthenticated: appState.isAuthenticated,
+                      currentUserId: appState.userId,
+                    ),
+                  ],
+
+                  if (details.broadcastDay.isNotEmpty) ...[
+                    const SizedBox(height: 18),
+                    _InfoChip(
+                      icon: Icons.calendar_month,
+                      label: [
+                        details.broadcastDay,
+                        details.broadcastTime,
+                      ].where((e) => e.isNotEmpty).join(' • '),
+                      color: _teal,
+                    ),
+                  ],
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.icon(
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _purple,
+                        foregroundColor: Colors.white,
+                      ),
+                      onPressed: () => _shareAnime(details),
+                      icon: const Icon(Icons.share_outlined),
+                      label: const Text('Share anime'),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Anime information provided by MyAnimeList through Jikan.',
+                    style: TextStyle(color: Colors.white38, fontSize: 11),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
     final appState = AppStateScope.of(context);
-
-    final filtered = appState.anime;
     final watchlist = appState.watchlist;
+    final searchActive = _searchController.text.trim().isNotEmpty;
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        AFTextField(
-          controller: searchController,
-          hintText: 'Search anime...',
-          prefixIcon: Icons.search,
-          onChanged: (value) {
-            setState(() => query = value);
-            appState.searchAnime(value);
-          },
-        ),
-
-        const SizedBox(height: 12),
-
-        Align(
-          alignment: Alignment.centerRight,
-          child: OutlinedButton.icon(
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(builder: (_) => const NewsScreen()),
+    return Container(
+      color: _background,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+        children: [
+          const Text(
+            'Anime Universe',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 25,
+              fontWeight: FontWeight.w800,
             ),
-            icon: const Icon(Icons.newspaper_outlined),
-            label: const Text('Anime News'),
+          ),
+          const SizedBox(height: 5),
+          const Text(
+            'Discover stories worth getting lost in.',
+            style: TextStyle(color: Colors.white60),
+          ),
+          const SizedBox(height: 18),
+          TextField(
+            controller: _searchController,
+            onChanged: _onSearchChanged,
+            style: const TextStyle(color: Colors.white),
+            decoration: InputDecoration(
+              hintText: 'Search anime titles...',
+              hintStyle: const TextStyle(color: Colors.white54),
+              prefixIcon: const Icon(Icons.search, color: _purple),
+              suffixIcon: IconButton(
+                onPressed: () {
+                  _searchController.clear();
+                  _onSearchChanged('');
+                  setState(() {});
+                },
+                icon: const Icon(Icons.close, color: Colors.white54),
+              ),
+              filled: true,
+              fillColor: _surface,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(16),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+          const SizedBox(height: 18),
+          if (searchActive) ...[
+            _sectionTitle('Search results', _blue),
+            const SizedBox(height: 12),
+            if (_loadingSearch)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: CircularProgressIndicator(color: _purple),
+                ),
+              )
+            else if (_searchError.isNotEmpty)
+              _ErrorPanel(message: _searchError, onRetry: () {
+                _searchAnime(_searchController.text.trim());
+              })
+            else if (_searchResults.isEmpty)
+              const _EmptyPanel(
+                icon: Icons.search_off,
+                title: 'No results yet',
+                message: 'Try another title or spelling.',
+              )
+            else
+              ..._searchResults.map(
+                (anime) => _AnimeTile(
+                  anime: anime,
+                  saved: watchlist.contains(anime.name),
+                  onTap: () => _openDetails(anime),
+                  onShare: () => _shareAnime(anime),
+                  onBookmark: () => appState.toggleWatchlist(anime),
+                ),
+              ),
+          ] else ...[
+            _tabSelector(),
+            const SizedBox(height: 20),
+            if (_selectedTab == 0) ...[
+              _sectionTitle('Popular anime', _pink),
+              const SizedBox(height: 12),
+              if (_loadingPopular)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: CircularProgressIndicator(color: _purple),
+                  ),
+                )
+              else if (_error.isNotEmpty)
+                _ErrorPanel(message: _error, onRetry: _loadPopular)
+              else if (_popular.isEmpty)
+                const _EmptyPanel(
+                  icon: Icons.movie_filter_outlined,
+                  title: 'No anime available',
+                  message: 'Jikan did not return any popular anime.',
+                )
+              else
+                ..._popular.map(
+                  (anime) => _AnimeTile(
+                    anime: anime,
+                    saved: watchlist.contains(anime.name),
+                    onTap: () => _openDetails(anime),
+                    onShare: () => _shareAnime(anime),
+                    onBookmark: () => appState.toggleWatchlist(anime),
+                  ),
+                ),
+            ] else ...[
+              _sectionTitle('Weekly airing calendar', _teal),
+              const SizedBox(height: 12),
+              _daySelector(),
+              const SizedBox(height: 14),
+              if (_loadingSchedule)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: CircularProgressIndicator(color: _teal),
+                  ),
+                )
+              else if (_schedule.isEmpty)
+                const _EmptyPanel(
+                  icon: Icons.event_busy,
+                  title: 'No schedule available',
+                  message: 'There may be no listings for this day, or Jikan may be unavailable.',
+                )
+              else
+                ..._schedule.map(
+                  (anime) => _AnimeTile(
+                    anime: anime,
+                    saved: watchlist.contains(anime.name),
+                    onTap: () => _openDetails(anime),
+                    onShare: () => _shareAnime(anime),
+                    onBookmark: () => appState.toggleWatchlist(anime),
+                    showBroadcast: true,
+                  ),
+                ),
+            ],
+          ],
+          const SizedBox(height: 20),
+          _sectionTitle('My watchlist', _orange),
+          const SizedBox(height: 10),
+          if (watchlist.isEmpty)
+            const _EmptyPanel(
+              icon: Icons.bookmark_outline,
+              title: 'Your watchlist is empty',
+              message: 'Save anime using the bookmark icon.',
+            )
+          else
+            ...watchlist.map(
+              (name) => Card(
+                color: _surface,
+                child: ListTile(
+                  leading: const Icon(Icons.bookmark, color: _orange),
+                  title: Text(
+                    name,
+                    style: const TextStyle(color: Colors.white),
+                  ),
+                  trailing: IconButton(
+                    tooltip: 'Remove from watchlist',
+                    onPressed: () => appState.removeFromWatchlist(name),
+                    icon: const Icon(
+                      Icons.remove_circle_outline,
+                      color: Colors.white60,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tabSelector() {
+    return Row(
+      children: [
+        Expanded(
+          child: _TabButton(
+            label: 'Discover',
+            icon: Icons.explore_outlined,
+            selected: _selectedTab == 0,
+            color: _purple,
+            onTap: () => setState(() => _selectedTab = 0),
           ),
         ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: _TabButton(
+            label: 'Airing calendar',
+            icon: Icons.calendar_month,
+            selected: _selectedTab == 1,
+            color: _teal,
+            onTap: () => setState(() => _selectedTab = 1),
+          ),
+        ),
+      ],
+    );
+  }
 
-        const SizedBox(height: 16),
+  Widget _daySelector() {
+    return SizedBox(
+      height: 42,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _days.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 7),
+        itemBuilder: (context, index) {
+          final day = _days[index];
+          final selected = day == _selectedDay;
 
-        const SectionTitle(title: 'Discover'),
+          return ChoiceChip(
+            label: Text(day.substring(0, 3)),
+            selected: selected,
+            onSelected: (_) {
+              setState(() => _selectedDay = day);
+              _loadSchedule(day);
+            },
+            selectedColor: _teal.withValues(alpha: 0.25),
+            backgroundColor: _surface,
+            labelStyle: TextStyle(
+              color: selected ? _teal : Colors.white70,
+              fontWeight: FontWeight.w600,
+            ),
+            side: BorderSide(
+              color: selected ? _teal : Colors.white12,
+            ),
+          );
+        },
+      ),
+    );
+  }
 
-        const SizedBox(height: 12),
+  Widget _sectionTitle(String title, Color color) {
+    return Row(
+      children: [
+        Container(
+          width: 4,
+          height: 21,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(5),
+          ),
+        ),
+        const SizedBox(width: 9),
+        Text(
+          title,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      ],
+    );
+  }
+}
 
-        AFCard(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+class _AnimeTile extends StatelessWidget {
+  const _AnimeTile({
+    required this.anime,
+    required this.saved,
+    required this.onTap,
+    required this.onShare,
+    required this.onBookmark,
+    this.showBroadcast = false,
+  });
+
+  final AnimeItem anime;
+  final bool saved;
+  final VoidCallback onTap;
+  final VoidCallback onShare;
+  final VoidCallback onBookmark;
+  final bool showBroadcast;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      color: _surface,
+      margin: const EdgeInsets.only(bottom: 11),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Colors.white10),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.all(10),
+          child: Row(
             children: [
-              const Text(
-                'YOUR NEXT ANIME STARTS HERE',
-                style: AppTypography.label,
+              _AnimePoster(anime: anime, width: 72, height: 94),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      anime.name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      anime.genre,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white60,
+                        fontSize: 11,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 5,
+                      children: [
+                        if (anime.score.isNotEmpty)
+                          _InfoChip(
+                            icon: Icons.star_rounded,
+                            label: anime.score,
+                            color: _orange,
+                          ),
+                        if (showBroadcast && anime.broadcastTime.isNotEmpty)
+                          _InfoChip(
+                            icon: Icons.schedule,
+                            label: anime.broadcastTime,
+                            color: _teal,
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 9),
-              const Text(
-                'Find your next favourite story.',
-                style: AppTypography.headingMedium,
-              ),
-              const SizedBox(height: 7),
-              const Text(
-                'Explore anime and build your personal library.',
-                style: AppTypography.bodySmall,
-              ),
-              const SizedBox(height: 15),
-              Row(
+              Column(
                 children: [
-                  const Icon(
-                    Icons.bookmarks_outlined,
-                    size: 17,
-                    color: AppColors.textSecondary,
+                  IconButton(
+                    tooltip: 'Share anime',
+                    onPressed: onShare,
+                    icon: const Icon(
+                      Icons.share_outlined,
+                      color: _blue,
+                      size: 21,
+                    ),
                   ),
-                  const SizedBox(width: 7),
-                  Text(
-                    '${watchlist.length} anime saved',
-                    style: AppTypography.bodySmall,
+                  IconButton(
+                    tooltip: saved ? 'Saved' : 'Add to watchlist',
+                    onPressed: onBookmark,
+                    icon: Icon(
+                      saved ? Icons.bookmark : Icons.bookmark_border,
+                      color: saved ? _pink : Colors.white70,
+                    ),
                   ),
                 ],
               ),
             ],
           ),
         ),
+      ),
+    );
+  }
+}
 
-        const SizedBox(height: 24),
+class _AnimePoster extends StatelessWidget {
+  const _AnimePoster({
+    required this.anime,
+    required this.width,
+    required this.height,
+  });
 
-        const SectionTitle(title: 'Search Results'),
+  final AnimeItem anime;
+  final double width;
+  final double height;
 
-        const SizedBox(height: 12),
-
-        if (appState.animeError.isNotEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: Text(
-              appState.animeError,
-              style: const TextStyle(color: AppColors.error),
-            ),
-          ),
-
-        if (filtered.isEmpty)
-          EmptyView(
-            title: query.trim().isEmpty ? 'Search for anime' : 'No anime found',
-            message: query.trim().isEmpty
-                ? 'Search the AniList catalogue to discover anime.'
-                : 'Try another anime title.',
-            icon: Icons.search_off,
-          ),
-
-        ...filtered.map((item) {
-          final saved = watchlist.contains(item.name);
-
-          return Padding(
-            padding: const EdgeInsets.only(bottom: 10),
-            child: AFCard(
-              child: Row(
-                children: [
-                  Container(
-                    width: 58,
-                    height: 72,
-                    decoration: BoxDecoration(
-                      color: AppColors.surfaceElevated,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: AppColors.border,
-                      ),
-                    ),
-                    child: item.coverUrl.isNotEmpty
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(11),
-                            child: Image.network(
-                              item.coverUrl,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, _, _) => const Icon(
-                                Icons.movie_outlined,
-                                size: 30,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                          )
-                        : const Icon(
-                            Icons.movie_outlined,
-                            size: 30,
-                            color: AppColors.textPrimary,
-                          ),
-                  ),
-
-                  const SizedBox(width: 13),
-
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          item.name,
-                          style: AppTypography.bodyLarge.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          item.genre,
-                          style: AppTypography.bodySmall,
-                        ),
-                        const SizedBox(height: 7),
-                        Text(
-                          saved ? 'IN YOUR WATCHLIST' : 'DISCOVER',
-                          style: AppTypography.label.copyWith(
-                            fontSize: 9,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-
-                  IconButton(
-                    tooltip: saved
-                        ? 'Remove from watchlist'
-                        : 'Add to watchlist',
-                    onPressed: () {
-                      appState.toggleWatchlist(item);
-                    },
-                    icon: Icon(
-                      saved
-                          ? Icons.bookmark
-                          : Icons.bookmark_border,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ],
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: const Color(0xFF292033),
+        borderRadius: BorderRadius.circular(11),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: anime.coverUrl.isEmpty
+          ? const Icon(Icons.movie_outlined, color: Colors.white54, size: 30)
+          : Image.network(
+              anime.coverUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => const Icon(
+                Icons.broken_image_outlined,
+                color: Colors.white54,
               ),
             ),
-          );
-        }),
+    );
+  }
+}
 
-        const SizedBox(height: 18),
+class _InfoChip extends StatelessWidget {
+  const _InfoChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
 
-        const SectionTitle(title: 'My Watchlist'),
+  final IconData icon;
+  final String label;
+  final Color color;
 
-        const SizedBox(height: 12),
-
-        if (watchlist.isEmpty)
-          const EmptyView(
-            title: 'Your watchlist is empty',
-            message: 'Save anime from the collection to see them here.',
-            icon: Icons.bookmark_border,
-          )
-        else
-          AFCard(
-            padding: EdgeInsets.zero,
-            child: Column(
-              children: [
-                ...watchlist.map((name) {
-                  return ListTile(
-                    leading: const Icon(
-                      Icons.bookmark,
-                      color: AppColors.textPrimary,
-                    ),
-                    title: Text(name),
-                    trailing: IconButton(
-                      tooltip: 'Remove from watchlist',
-                      onPressed: () {
-                        appState.removeFromWatchlist(name);
-                      },
-                      icon: const Icon(
-                        Icons.remove_circle_outline,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                  );
-                }),
-              ],
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 13),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
 
-        const SizedBox(height: 30),
-      ],
+class _TabButton extends StatelessWidget {
+  const _TabButton({
+    required this.label,
+    required this.icon,
+    required this.selected,
+    required this.color,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool selected;
+  final Color color;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      borderRadius: BorderRadius.circular(13),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        decoration: BoxDecoration(
+          color: selected ? color.withValues(alpha: 0.16) : _surface,
+          borderRadius: BorderRadius.circular(13),
+          border: Border.all(
+            color: selected ? color : Colors.white12,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 17, color: selected ? color : Colors.white60),
+            const SizedBox(width: 7),
+            Flexible(
+              child: Text(
+                label,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: selected ? color : Colors.white70,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _EmptyPanel extends StatelessWidget {
+  const _EmptyPanel({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Column(
+        children: [
+          Icon(icon, color: _purple, size: 30),
+          const SizedBox(height: 10),
+          Text(
+            title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(color: Colors.white60, fontSize: 12),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ErrorPanel extends StatelessWidget {
+  const _ErrorPanel({
+    required this.message,
+    required this.onRetry,
+  });
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        children: [
+          Text(
+            message,
+            style: const TextStyle(color: Colors.white70),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 10),
+          TextButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh),
+            label: const Text('Try again'),
+          ),
+        ],
+      ),
     );
   }
 }

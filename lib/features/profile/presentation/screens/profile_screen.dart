@@ -89,16 +89,6 @@ class ProfileScreen extends StatelessWidget {
           'Settings',
           () => _showMessage(context, 'Settings'),
         ),
-        _profileTile(
-          Icons.info_outline,
-          'About Anime Friends',
-          () => showAboutDialog(
-            context: context,
-            applicationName: 'Anime Friends',
-            applicationVersion: '1.0.0',
-            applicationLegalese: 'Anime community app',
-          ),
-        ),
         const SizedBox(height: 20),
         Center(
           child: Text(

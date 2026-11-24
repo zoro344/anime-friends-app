@@ -67,7 +67,10 @@ class AnimeItem {
     final broadcast = json['broadcast'];
     final aired = json['aired'];
     final seasonName = json['season']?.toString() ?? '';
-    final yearValue = json['year'] ?? (aired is Map ? aired['prop']?['from']?['year'] : null);
+    final airedProp = aired is Map ? aired['prop'] : null;
+    final airedFrom = airedProp is Map ? airedProp['from'] : null;
+    final airedYear = airedFrom is Map ? airedFrom['year'] : null;
+    final yearValue = json['year'] ?? airedYear;
 
     return AnimeItem(
       id: '${json['mal_id'] ?? ''}',

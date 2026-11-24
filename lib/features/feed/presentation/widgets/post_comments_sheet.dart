@@ -1,23 +1,29 @@
 import 'package:flutter/material.dart';
 
 import '../../../../app/app_colors.dart';
-import '../../../../core/state/app_state_scope.dart';
+import '../../../../core/state/app_state.dart';
 import '../../../../core/models/post_comment.dart';
 
 class PostCommentsSheet extends StatefulWidget {
   const PostCommentsSheet({
     super.key,
     required this.postId,
+    required this.state,
   });
 
   final String postId;
+  final AppState state;
 
   @override
-  State<PostCommentsSheet> createState() => _PostCommentsSheetState();
+  State<PostCommentsSheet> createState() =>
+      _PostCommentsSheetState();
 }
 
-class _PostCommentsSheetState extends State<PostCommentsSheet> {
-  final TextEditingController _controller = TextEditingController();
+class _PostCommentsSheetState
+    extends State<PostCommentsSheet> {
+  final TextEditingController _controller =
+      TextEditingController();
+
   bool _loading = true;
   bool _sending = false;
   bool _started = false;
@@ -33,12 +39,13 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
   }
 
   Future<void> _loadComments() async {
-    final state = AppStateScope.of(context);
-    await state.loadComments(widget.postId);
+    await widget.state.loadComments(widget.postId);
 
-    if (mounted) {
-      setState(() => _loading = false);
-    }
+    if (!mounted) return;
+
+    setState(() {
+      _loading = false;
+    });
   }
 
   Future<void> _sendComment() async {
@@ -46,10 +53,14 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
 
     if (value.isEmpty || _sending) return;
 
-    setState(() => _sending = true);
+    setState(() {
+      _sending = true;
+    });
 
-    final state = AppStateScope.of(context);
-    final succeeded = await state.addComment(widget.postId, value);
+    final succeeded = await widget.state.addComment(
+      widget.postId,
+      value,
+    );
 
     if (!mounted) return;
 
@@ -57,40 +68,43 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
       _controller.clear();
     }
 
-    setState(() => _sending = false);
+    setState(() {
+      _sending = false;
+    });
   }
 
   Future<void> _editComment(PostComment comment) async {
-    final controller = TextEditingController(text: comment.content);
+    final controller = TextEditingController(
+      text: comment.content,
+    );
 
     final edited = await showDialog<String>(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          backgroundColor: AppColors.surfaceElevated,
-          title: const Text(
-            'Edit comment',
-            style: TextStyle(color: AppColors.textPrimary),
-          ),
+          title: const Text('Edit comment'),
           content: TextField(
             controller: controller,
             maxLength: 1500,
             maxLines: 4,
-            style: const TextStyle(color: AppColors.textPrimary),
             decoration: const InputDecoration(
               hintText: 'Write a comment...',
             ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(dialogContext),
+              onPressed: () {
+                Navigator.pop(dialogContext);
+              },
               child: const Text('Cancel'),
             ),
             TextButton(
-              onPressed: () => Navigator.pop(
-                dialogContext,
-                controller.text,
-              ),
+              onPressed: () {
+                Navigator.pop(
+                  dialogContext,
+                  controller.text,
+                );
+              },
               child: const Text('Save'),
             ),
           ],
@@ -100,9 +114,13 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
 
     controller.dispose();
 
-    if (edited == null || edited.trim().isEmpty || !mounted) return;
+    if (edited == null ||
+        edited.trim().isEmpty ||
+        !mounted) {
+      return;
+    }
 
-    await AppStateScope.of(context).editComment(
+    await widget.state.editComment(
       comment.id,
       widget.postId,
       edited,
@@ -110,7 +128,7 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
   }
 
   Future<void> _deleteComment(PostComment comment) async {
-    await AppStateScope.of(context).deleteComment(
+    await widget.state.deleteComment(
       comment.id,
       widget.postId,
     );
@@ -124,7 +142,7 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final state = AppStateScope.of(context);
+    final state = widget.state;
     final comments = state.commentsForPost(widget.postId);
 
     return SafeArea(
@@ -143,18 +161,28 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
                 ),
               ),
             ),
-            const Divider(color: AppColors.divider, height: 1),
+
+            const Divider(
+              color: AppColors.divider,
+              height: 1,
+            ),
+
             if (state.commentError.isNotEmpty)
               Padding(
                 padding: const EdgeInsets.all(12),
                 child: Text(
                   state.commentError,
-                  style: const TextStyle(color: AppColors.error),
+                  style: const TextStyle(
+                    color: AppColors.error,
+                  ),
                 ),
               ),
+
             Expanded(
               child: _loading
-                  ? const Center(child: CircularProgressIndicator())
+                  ? const Center(
+                      child: CircularProgressIndicator(),
+                    )
                   : comments.isEmpty
                       ? const Center(
                           child: Text(
@@ -171,9 +199,12 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
                             final comment = comments[index];
 
                             return Padding(
-                              padding: const EdgeInsets.only(bottom: 16),
+                              padding: const EdgeInsets.only(
+                                bottom: 16,
+                              ),
                               child: Row(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                                crossAxisAlignment:
+                                    CrossAxisAlignment.start,
                                 children: [
                                   CircleAvatar(
                                     radius: 18,
@@ -182,13 +213,16 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
                                     child: Text(
                                       comment.username.isEmpty
                                           ? '?'
-                                          : comment.username[0].toUpperCase(),
+                                          : comment.username[0]
+                                              .toUpperCase(),
                                       style: const TextStyle(
                                         color: AppColors.textPrimary,
                                       ),
                                     ),
                                   ),
+
                                   const SizedBox(width: 10),
+
                                   Expanded(
                                     child: Column(
                                       crossAxisAlignment:
@@ -211,9 +245,11 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
                                       ],
                                     ),
                                   ),
+
                                   if (comment.isMine(state.userId))
                                     PopupMenuButton<String>(
-                                      color: AppColors.surfaceElevated,
+                                      color:
+                                          AppColors.surfaceElevated,
                                       icon: const Icon(
                                         Icons.more_vert,
                                         color: AppColors.iconMuted,
@@ -242,7 +278,12 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
                           },
                         ),
             ),
-            const Divider(color: AppColors.divider, height: 1),
+
+            const Divider(
+              color: AppColors.divider,
+              height: 1,
+            ),
+
             Padding(
               padding: EdgeInsets.fromLTRB(
                 12,
@@ -266,6 +307,7 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
                       ),
                     ),
                   ),
+
                   IconButton(
                     tooltip: 'Send comment',
                     onPressed: _sending ? null : _sendComment,

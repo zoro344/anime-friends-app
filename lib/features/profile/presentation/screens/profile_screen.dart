@@ -5,9 +5,9 @@ import '../../../../app/app_typography.dart';
 import '../../../../core/state/app_state_scope.dart';
 import '../../../../core/widgets/af_avatar.dart';
 import '../../../../core/widgets/af_card.dart';
-import '../../../../core/widgets/empty_view.dart';
 import '../../../../core/widgets/section_title.dart';
 import '../../../friends/presentation/screens/friends_screen.dart';
+import '../../../library/presentation/screens/library_screen.dart';
 
 class ProfileScreen extends StatelessWidget {
   const ProfileScreen({super.key});
@@ -61,16 +61,22 @@ class ProfileScreen extends StatelessWidget {
           ],
         ),
         const SizedBox(height: 25),
+        const SectionTitle(title: 'Library'),
+        _profileTile(
+          Icons.library_books_outlined,
+          'Anime & Manga Library',
+          () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const LibraryScreen(),
+            ),
+          ),
+        ),
+        const SizedBox(height: 12),
         const SectionTitle(title: 'Account'),
         _profileTile(
           Icons.person_outline,
           'Edit Profile',
           () => _editProfile(context, appState),
-        ),
-        _profileTile(
-          Icons.bookmark_outline,
-          'My Watchlist',
-          () => _showWatchlist(context, appState),
         ),
         _profileTile(
           Icons.logout,
@@ -155,55 +161,6 @@ class ProfileScreen extends StatelessWidget {
     showDialog(
       context: context,
       builder: (_) => _EditProfileDialog(appState: appState),
-    );
-  }
-
-  void _showWatchlist(BuildContext context, dynamic appState) {
-    final items = appState.watchlist as Set<String>;
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: AppColors.surfaceElevated,
-      builder: (sheetContext) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'My Watchlist',
-                style: AppTypography.headingSmall.copyWith(
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const SizedBox(height: 15),
-              if (items.isEmpty)
-                const EmptyView(
-                  title: 'Your watchlist is empty',
-                  message: 'Save anime from Discover to see it here.',
-                  icon: Icons.bookmark_outline,
-                )
-              else
-                ...items.map(
-                  (item) => ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    leading: const Icon(
-                      Icons.bookmark_outline,
-                      color: AppColors.iconMuted,
-                    ),
-                    title: Text(
-                      item,
-                      style: AppTypography.bodyMedium.copyWith(
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 

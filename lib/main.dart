@@ -8,7 +8,6 @@ import 'features/anime/presentation/screens/anime_screen.dart';
 import 'features/auth/presentation/screens/auth_screen.dart';
 import 'features/chats/presentation/screens/chats_screen.dart';
 import 'features/feed/presentation/screens/feed_screen.dart';
-import 'features/library/presentation/screens/library_screen.dart';
 import 'features/manga/presentation/screens/manga_screen.dart';
 import 'features/news/presentation/screens/news_screen.dart';
 import 'features/notifications/presentation/screens/notifications_screen.dart';
@@ -106,7 +105,6 @@ class _MainScreenState extends State<MainScreen> {
   static const List<Widget> _pages = [
     FeedScreen(),
     AnimeScreen(),
-    LibraryScreen(),
     MangaScreen(),
     WatchScreen(),
     ChatsScreen(),
@@ -115,7 +113,6 @@ class _MainScreenState extends State<MainScreen> {
   static const List<String> _titles = [
     'Anime Friends',
     'Discover Anime',
-    'Your Library',
     'Discover Manga',
     'Watch Together',
     'Messages',
@@ -207,11 +204,6 @@ class _MainScreenState extends State<MainScreen> {
             icon: Icon(Icons.explore_outlined),
             selectedIcon: Icon(Icons.explore),
             label: 'Anime',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.library_books_outlined),
-            selectedIcon: Icon(Icons.library_books),
-            label: 'Library',
           ),
           NavigationDestination(
             icon: Icon(Icons.menu_book_outlined),

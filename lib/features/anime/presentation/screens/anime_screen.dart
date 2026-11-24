@@ -34,6 +34,18 @@ class _AnimeScreenState extends State<AnimeScreen> {
   List<AnimeItem> _popular = [];
   List<AnimeItem> _searchResults = [];
   List<AnimeItem> _schedule = [];
+  List<AnimeItem> _discoveryResults = [];
+  bool _loadingDiscovery = false;
+  String _discoveryError = '';
+  int _selectedDiscovery = 0;
+
+  static const _discoveryCategories = [
+    'Popular anime',
+    'Top rated',
+    'Currently airing',
+    'Upcoming',
+    'This season',
+  ];
 
   bool _loadingPopular = true;
   bool _loadingSearch = false;
@@ -115,6 +127,50 @@ class _AnimeScreenState extends State<AnimeScreen> {
       setState(() {
         _schedule = [];
         _loadingSchedule = false;
+      });
+    }
+  }
+
+  Future<void> _loadDiscovery(int category) async {
+    if (category < 1 || category >= _discoveryCategories.length) return;
+
+    setState(() {
+      _loadingDiscovery = true;
+      _discoveryError = '';
+    });
+
+    try {
+      late final List<AnimeItem> results;
+
+      switch (category) {
+        case 1:
+          results = await _jikan.getTopRatedAnime();
+          break;
+        case 2:
+          results = await _jikan.getCurrentlyAiringAnime();
+          break;
+        case 3:
+          results = await _jikan.getUpcomingAnime();
+          break;
+        case 4:
+          results = await _jikan.getSeasonalAnime();
+          break;
+        default:
+          return;
+      }
+
+      if (!mounted || _selectedDiscovery != category) return;
+
+      setState(() {
+        _discoveryResults = results;
+        _loadingDiscovery = false;
+      });
+    } catch (error) {
+      if (!mounted || _selectedDiscovery != category) return;
+
+      setState(() {
+        _discoveryError = _cleanError(error);
+        _loadingDiscovery = false;
       });
     }
   }
@@ -390,6 +446,15 @@ class _AnimeScreenState extends State<AnimeScreen> {
             ),
           ),
           const SizedBox(height: 18),
+          if (!searchActive &&
+              _selectedDiscovery == 0 &&
+              _popular.isNotEmpty) ...[
+            _featuredAnimeCard(
+              _popular.first,
+              onTap: () => _openDetails(_popular.first),
+            ),
+            const SizedBox(height: 20),
+          ],
           if (searchActive) ...[
             _sectionTitle('Search results', _blue),
             const SizedBox(height: 12),
@@ -424,34 +489,60 @@ class _AnimeScreenState extends State<AnimeScreen> {
             _tabSelector(),
             const SizedBox(height: 20),
             if (_selectedTab == 0) ...[
-              _sectionTitle('Popular anime', _pink),
-              const SizedBox(height: 12),
-              if (_loadingPopular)
-                const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: CircularProgressIndicator(color: _purple),
-                  ),
-                )
-              else if (_error.isNotEmpty)
-                _ErrorPanel(message: _error, onRetry: _loadPopular)
-              else if (_popular.isEmpty)
-                const _EmptyPanel(
-                  icon: Icons.movie_filter_outlined,
-                  title: 'No anime available',
-                  message: 'MyAnimeList did not return any popular anime.',
-                )
-              else
-                ..._popular.map(
-                  (anime) => _AnimeTile(
-                    anime: anime,
-                    saved: watchlist.contains(anime.name),
-                    onTap: () => _openDetails(anime),
-                    onShare: () => _shareAnime(anime),
-                    onBookmark: () => appState.toggleWatchlist(anime),
-                  ),
-                ),
-            ] else ...[
+                    _discoverySelector(),
+                    const SizedBox(height: 16),
+                    _sectionTitle(
+                      _discoveryCategories[_selectedDiscovery],
+                      _pink,
+                    ),
+                    const SizedBox(height: 12),
+                    if (_selectedDiscovery == 0 && _loadingPopular)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: CircularProgressIndicator(color: _purple),
+                        ),
+                      )
+                    else if (_selectedDiscovery == 0 && _error.isNotEmpty)
+                      _ErrorPanel(
+                        message: _error,
+                        onRetry: _loadPopular,
+                      )
+                    else if (_selectedDiscovery != 0 && _loadingDiscovery)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: CircularProgressIndicator(color: _purple),
+                        ),
+                      )
+                    else if (_selectedDiscovery != 0 &&
+                        _discoveryError.isNotEmpty)
+                      _ErrorPanel(
+                        message: _discoveryError,
+                        onRetry: () => _loadDiscovery(_selectedDiscovery),
+                      )
+                    else if ((_selectedDiscovery == 0
+                            ? _popular
+                            : _discoveryResults).isEmpty)
+                      const _EmptyPanel(
+                        icon: Icons.movie_filter_outlined,
+                        title: 'No anime available',
+                        message: 'No titles were returned for this category.',
+                      )
+                    else
+                      ...(_selectedDiscovery == 0
+                              ? _popular
+                              : _discoveryResults)
+                          .map(
+                        (anime) => _AnimeTile(
+                          anime: anime,
+                          saved: watchlist.contains(anime.name),
+                          onTap: () => _openDetails(anime),
+                          onShare: () => _shareAnime(anime),
+                          onBookmark: () => appState.toggleWatchlist(anime),
+                        ),
+                      ),
+                  ] else ...[
               _sectionTitle('Weekly airing calendar', _teal),
               const SizedBox(height: 12),
               _daySelector(),
@@ -517,6 +608,126 @@ class _AnimeScreenState extends State<AnimeScreen> {
     );
   }
 
+  Widget _featuredAnimeCard(
+    AnimeItem anime, {
+    required VoidCallback onTap,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: Material(
+        color: _surface,
+        child: InkWell(
+          onTap: onTap,
+          child: SizedBox(
+            height: 210,
+            width: double.infinity,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (anime.coverUrl.isNotEmpty)
+                  Image.network(
+                    anime.coverUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const ColoredBox(
+                      color: _surface,
+                    ),
+                  )
+                else
+                  const ColoredBox(color: _surface),
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerRight,
+                      end: Alignment.centerLeft,
+                      colors: [
+                        Color(0xCC08060D),
+                        Color(0x9908060D),
+                        Color(0x3308060D),
+                      ],
+                    ),
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      const Text(
+                        'FEATURED ANIME',
+                        style: TextStyle(
+                          color: _pink,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 7),
+                      Text(
+                        anime.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 23,
+                          fontWeight: FontWeight.w900,
+                          height: 1.1,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          if (anime.score.isNotEmpty)
+                            _InfoChip(
+                              icon: Icons.star_rounded,
+                              label: anime.score,
+                              color: _orange,
+                            ),
+                          if (anime.type.isNotEmpty)
+                            _InfoChip(
+                              icon: Icons.movie_outlined,
+                              label: anime.type.toUpperCase(),
+                              color: _blue,
+                            ),
+                          if (anime.year.isNotEmpty)
+                            _InfoChip(
+                              icon: Icons.calendar_today,
+                              label: anime.year,
+                              color: _teal,
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      const Row(
+                        children: [
+                          Icon(
+                            Icons.play_circle_fill_rounded,
+                            color: Colors.white,
+                            size: 19,
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            'View details',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _tabSelector() {
     return Row(
       children: [
@@ -540,6 +751,38 @@ class _AnimeScreenState extends State<AnimeScreen> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _discoverySelector() {
+    return SizedBox(
+      height: 42,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _discoveryCategories.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 7),
+        itemBuilder: (context, index) {
+          final selected = _selectedDiscovery == index;
+
+          return ChoiceChip(
+            label: Text(_discoveryCategories[index]),
+            selected: selected,
+            onSelected: (_) {
+              setState(() => _selectedDiscovery = index);
+              if (index != 0) _loadDiscovery(index);
+            },
+            selectedColor: _purple.withValues(alpha: 0.25),
+            backgroundColor: _surface,
+            labelStyle: TextStyle(
+              color: selected ? _purple : Colors.white70,
+              fontWeight: FontWeight.w600,
+            ),
+            side: BorderSide(
+              color: selected ? _purple : Colors.white12,
+            ),
+          );
+        },
+      ),
     );
   }
 

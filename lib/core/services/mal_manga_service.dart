@@ -148,6 +148,17 @@ class MalMangaService {
     );
   }
 
+  Future<List<MangaItem>> getTopRankedManga() {
+    return _getMangaList(
+      '/manga/ranking',
+      query: {
+        'ranking_type': 'all',
+        'limit': 18,
+        'fields': _fields,
+      },
+    );
+  }
+
   Future<List<MangaItem>> searchManga(String query) {
     final normalizedQuery = query.trim();
 

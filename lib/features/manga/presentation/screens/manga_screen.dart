@@ -26,6 +26,12 @@ class _MangaScreenState extends State<MangaScreen> {
   Timer? _searchTimer;
   List<MangaItem> _popular = [];
   List<MangaItem> _searchResults = [];
+  List<MangaItem> _topRanked = [];
+  bool _loadingTopRanked = false;
+  String _topRankedError = '';
+  int _selectedMangaCategory = 0;
+
+  static const _mangaCategories = ['Popular', 'Top ranked'];
 
   bool _loadingPopular = true;
   bool _loadingSearch = false;
@@ -68,6 +74,62 @@ class _MangaScreenState extends State<MangaScreen> {
         _loadingPopular = false;
       });
     }
+  }
+
+  Future<void> _loadTopRanked() async {
+    setState(() {
+      _loadingTopRanked = true;
+      _topRankedError = '';
+    });
+
+    try {
+      final results = await _mal.getTopRankedManga();
+      if (!mounted || _selectedMangaCategory != 1) return;
+
+      setState(() {
+        _topRanked = results;
+        _loadingTopRanked = false;
+      });
+    } catch (error) {
+      if (!mounted || _selectedMangaCategory != 1) return;
+
+      setState(() {
+        _topRankedError = _cleanError(error);
+        _loadingTopRanked = false;
+      });
+    }
+  }
+
+  Widget _mangaCategorySelector() {
+    return SizedBox(
+      height: 42,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _mangaCategories.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, index) {
+          final selected = _selectedMangaCategory == index;
+
+          return ChoiceChip(
+            label: Text(_mangaCategories[index]),
+            selected: selected,
+            onSelected: (_) {
+              setState(() => _selectedMangaCategory = index);
+              if (index == 1) _loadTopRanked();
+            },
+            selectedColor: _purple.withValues(alpha: 0.25),
+            backgroundColor: _surface,
+            labelStyle: TextStyle(
+              color: selected ? _purple : Colors.white70,
+              fontWeight: FontWeight.w600,
+            ),
+            side: BorderSide(
+              color: selected ? _purple : Colors.white12,
+            ),
+          );
+        },
+      ),
+    );
   }
 
   void _onSearchChanged(String value) {
@@ -374,6 +436,17 @@ class _MangaScreenState extends State<MangaScreen> {
             ),
           ),
           const SizedBox(height: 20),
+          if (!searchActive &&
+            _selectedMangaCategory == 0 &&
+            !_loadingPopular &&
+            _error.isEmpty &&
+            _popular.isNotEmpty) ...[
+            _featuredMangaCard(
+              _popular.first,
+              onTap: () => _openDetails(_popular.first),
+            ),
+            const SizedBox(height: 20),
+          ],
           if (searchActive) ...[
             _sectionTitle('Search results', _blue),
             const SizedBox(height: 12),
@@ -407,36 +480,219 @@ class _MangaScreenState extends State<MangaScreen> {
                 ),
               ),
           ] else ...[
-            _sectionTitle('Popular manga', const Color(0xFFFF70B8)),
-            const SizedBox(height: 12),
-            if (_loadingPopular)
-              const Center(
-                child: Padding(
-                  padding: EdgeInsets.all(24),
-                  child: CircularProgressIndicator(color: _purple),
+                    _mangaCategorySelector(),
+                    const SizedBox(height: 16),
+                    _sectionTitle(
+                      _mangaCategories[_selectedMangaCategory] == 'Popular'
+                          ? 'Popular manga'
+                          : 'Top ranked manga',
+                      const Color(0xFFFF70B8),
+                    ),
+                    const SizedBox(height: 12),
+                    if (_selectedMangaCategory == 0 && _loadingPopular)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: CircularProgressIndicator(color: _purple),
+                        ),
+                      )
+                    else if (_selectedMangaCategory == 0 && _error.isNotEmpty)
+                      _ErrorPanel(
+                        message: _error,
+                        onRetry: _loadPopular,
+                      )
+                    else if (_selectedMangaCategory == 1 && _loadingTopRanked)
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: CircularProgressIndicator(color: _purple),
+                        ),
+                      )
+                    else if (_selectedMangaCategory == 1 &&
+                        _topRankedError.isNotEmpty)
+                      _ErrorPanel(
+                        message: _topRankedError,
+                        onRetry: _loadTopRanked,
+                      )
+                    else if ((_selectedMangaCategory == 0
+                            ? _popular
+                            : _topRanked).isEmpty)
+                      const _EmptyPanel(
+                        icon: Icons.menu_book_outlined,
+                        title: 'No manga available',
+                        message: 'MyAnimeList did not return manga for this category.',
+                      )
+                    else
+                      ...(_selectedMangaCategory == 0
+                              ? _popular
+                              : _topRanked)
+                          .map(
+                        (manga) => _MangaTile(
+                          manga: manga,
+                          saved: savedIds.contains(manga.id),
+                          onTap: () => _openDetails(manga),
+                          onAdd: () => _addToLibrary(manga),
+                        ),
+                      ),
+                  ],
+        ],
+      ),
+    );
+  }
+
+  Widget _featuredMangaCard(
+    MangaItem manga, {
+    required VoidCallback onTap,
+  }) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: Material(
+        color: _surface,
+        child: InkWell(
+          onTap: onTap,
+          child: SizedBox(
+            height: 210,
+            width: double.infinity,
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                if (manga.coverUrl.isNotEmpty)
+                  Image.network(
+                    manga.coverUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, _, _) => const ColoredBox(
+                      color: _surface,
+                    ),
+                  )
+                else
+                  const ColoredBox(color: _surface),
+                const DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.centerRight,
+                      end: Alignment.centerLeft,
+                      colors: [
+                        Color(0xCC08060D),
+                        Color(0x9908060D),
+                        Color(0x3308060D),
+                      ],
+                    ),
+                  ),
                 ),
-              )
-            else if (_error.isNotEmpty)
-              _ErrorPanel(
-                message: _error,
-                onRetry: _loadPopular,
-              )
-            else if (_popular.isEmpty)
-              const _EmptyPanel(
-                icon: Icons.menu_book_outlined,
-                title: 'No manga available',
-                message: 'MyAnimeList did not return any popular manga.',
-              )
-            else
-              ..._popular.map(
-                (manga) => _MangaTile(
-                  manga: manga,
-                  saved: savedIds.contains(manga.id),
-                  onTap: () => _openDetails(manga),
-                  onAdd: () => _addToLibrary(manga),
+                Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      const Text(
+                        'FEATURED MANGA',
+                        style: TextStyle(
+                          color: Color(0xFFFF70B8),
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 7),
+                      Text(
+                        manga.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 23,
+                          fontWeight: FontWeight.w900,
+                          height: 1.1,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 6,
+                        children: [
+                          if (manga.score.isNotEmpty && manga.score != '—')
+                            _MangaInfoChip(
+                              icon: Icons.star_rounded,
+                              label: manga.score,
+                              color: _orange,
+                            ),
+                          if (manga.type.isNotEmpty)
+                            _MangaInfoChip(
+                              icon: Icons.menu_book_rounded,
+                              label: manga.type.toUpperCase(),
+                              color: _blue,
+                            ),
+                          if (manga.year.isNotEmpty)
+                            _MangaInfoChip(
+                              icon: Icons.calendar_today,
+                              label: manga.year,
+                              color: _purple,
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      const Row(
+                        children: [
+                          Icon(
+                            Icons.menu_book_rounded,
+                            color: Colors.white,
+                            size: 19,
+                          ),
+                          SizedBox(width: 6),
+                          Text(
+                            'View details',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-          ],
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MangaInfoChip extends StatelessWidget {
+  const _MangaInfoChip({
+    required this.icon,
+    required this.label,
+    required this.color,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 13),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
         ],
       ),
     );

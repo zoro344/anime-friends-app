@@ -94,6 +94,48 @@ class JikanService {
     );
   }
 
+  Future<List<AnimeItem>> getTopRatedAnime() {
+    return _getAnimeList(
+      '/top/anime',
+      query: {
+        'limit': 18,
+        'sfw': true,
+      },
+    );
+  }
+
+  Future<List<AnimeItem>> getCurrentlyAiringAnime() {
+    return _getAnimeList(
+      '/top/anime',
+      query: {
+        'filter': 'airing',
+        'limit': 18,
+        'sfw': true,
+      },
+    );
+  }
+
+  Future<List<AnimeItem>> getUpcomingAnime() {
+    return _getAnimeList(
+      '/top/anime',
+      query: {
+        'filter': 'upcoming',
+        'limit': 18,
+        'sfw': true,
+      },
+    );
+  }
+
+  Future<List<AnimeItem>> getSeasonalAnime() {
+    return _getAnimeList(
+      '/seasons/now',
+      query: {
+        'limit': 18,
+        'sfw': true,
+      },
+    );
+  }
+
   Future<List<AnimeItem>> searchAnime(String query) {
     return _getAnimeList(
       '/anime',

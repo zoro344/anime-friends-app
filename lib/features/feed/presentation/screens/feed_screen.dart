@@ -30,6 +30,95 @@ class _FeedScreenState extends State<FeedScreen> {
     FocusScope.of(context).unfocus();
   }
 
+  Future<void> _editPost(String postId, String initialText) async {
+    final controller = TextEditingController(text: initialText);
+
+    try {
+      final updatedText = await showDialog<String>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Edit post'),
+          content: TextField(
+            controller: controller,
+            autofocus: true,
+            maxLines: 5,
+            maxLength: 4000,
+            decoration: const InputDecoration(
+              hintText: 'Write your post...',
+              border: OutlineInputBorder(),
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                if (controller.text.trim().isEmpty) return;
+                Navigator.pop(dialogContext, controller.text);
+              },
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      );
+
+      if (!mounted || updatedText == null) return;
+
+      final success =
+          await AppStateScope.of(context).editPost(postId, updatedText);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            success ? 'Post updated.' : 'Could not update the post.',
+          ),
+        ),
+      );
+    } finally {
+      controller.dispose();
+    }
+  }
+
+  Future<void> _deletePost(String postId) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Delete post?'),
+        content: const Text(
+          'This post will be permanently deleted. This cannot be undone.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted || confirmed != true) return;
+
+    final success = await AppStateScope.of(context).deletePost(postId);
+
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          success ? 'Post deleted.' : 'Could not delete the post.',
+        ),
+      ),
+    );
+  }
+
   @override
   void dispose() {
     postController.dispose();
@@ -144,10 +233,44 @@ class _FeedScreenState extends State<FeedScreen> {
                             ],
                           ),
                         ),
-                        const Icon(
-                          Icons.more_horiz,
-                          color: AppColors.iconMuted,
-                        ),
+                        if (post.userId != null &&
+                            post.userId == appState.userId)
+                          PopupMenuButton<String>(
+                            tooltip: 'Post options',
+                            icon: const Icon(
+                              Icons.more_horiz,
+                              color: AppColors.iconMuted,
+                            ),
+                            onSelected: (value) {
+                              if (value == 'edit') {
+                                _editPost(post.id, post.text);
+                              } else if (value == 'delete') {
+                                _deletePost(post.id);
+                              }
+                            },
+                            itemBuilder: (context) => const [
+                              PopupMenuItem(
+                                value: 'edit',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.edit_outlined),
+                                    SizedBox(width: 10),
+                                    Text('Edit post'),
+                                  ],
+                                ),
+                              ),
+                              PopupMenuItem(
+                                value: 'delete',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.delete_outline),
+                                    SizedBox(width: 10),
+                                    Text('Delete post'),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                       ],
                     ),
 

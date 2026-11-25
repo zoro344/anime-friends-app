@@ -1043,6 +1043,78 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  Future<bool> editPost(String postId, String text) async {
+    final value = text.trim();
+
+    if (value.isEmpty || value.length > 4000) {
+      feedError = 'Post must contain between 1 and 4000 characters.';
+      notifyListeners();
+      return false;
+    }
+
+    if (!isAuthenticated ||
+        userId.isEmpty ||
+        !SupabaseService.isInitialized) {
+      feedError = 'Please sign in to edit your post.';
+      notifyListeners();
+      return false;
+    }
+
+    try {
+      final updated = await SupabaseService.client
+          .from('posts')
+          .update({'content': value})
+          .eq('id', postId)
+          .eq('user_id', userId)
+          .select('id');
+
+      if (updated.isEmpty) {
+        feedError = 'Post not found or you cannot edit it.';
+        notifyListeners();
+        return false;
+      }
+
+      await loadFeed();
+      return true;
+    } catch (_) {
+      feedError = 'Could not edit your post. Please try again.';
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> deletePost(String postId) async {
+    if (!isAuthenticated ||
+        userId.isEmpty ||
+        !SupabaseService.isInitialized) {
+      feedError = 'Please sign in to delete your post.';
+      notifyListeners();
+      return false;
+    }
+
+    try {
+      final deleted = await SupabaseService.client
+          .from('posts')
+          .delete()
+          .eq('id', postId)
+          .eq('user_id', userId)
+          .select('id');
+
+      if (deleted.isEmpty) {
+        feedError = 'Post not found or you cannot delete it.';
+        notifyListeners();
+        return false;
+      }
+
+      await loadFeed();
+      return true;
+    } catch (_) {
+      feedError = 'Could not delete your post. Please try again.';
+      notifyListeners();
+      return false;
+    }
+  }
+
   Future<void> toggleLike(String postId) async {
     final index = _posts.indexWhere((post) => post.id == postId);
     if (index < 0 ||

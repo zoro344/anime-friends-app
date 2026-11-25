@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../app/app_colors.dart';
 import '../../../../app/app_typography.dart';
+import '../../../chats/presentation/screens/chat_thread_screen.dart';
 import '../../../../core/state/app_state_scope.dart';
 import '../../../../core/widgets/af_card.dart';
 import '../../../../core/widgets/empty_view.dart';
@@ -147,6 +148,22 @@ class _FriendsScreenState extends State<FriendsScreen> {
                       const Icon(Icons.person),
                       const SizedBox(width: 10),
                       Expanded(child: Text(name)),
+                      IconButton(
+                        tooltip: 'Message',
+                        onPressed: id.isEmpty
+                            ? null
+                            : () {
+                                Navigator.of(context).push(
+                                  MaterialPageRoute(
+                                    builder: (_) => ChatThreadScreen(
+                                      userId: id,
+                                      username: name,
+                                    ),
+                                  ),
+                                );
+                              },
+                        icon: const Icon(Icons.chat_bubble_outline),
+                      ),
                       IconButton(
                         tooltip: 'Remove friend',
                         onPressed: () => state.removeFriend(id),

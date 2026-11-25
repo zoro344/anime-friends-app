@@ -730,15 +730,63 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> _loadChats() async {
+    if (!SupabaseService.isInitialized) return;
+
     try {
-      final response = await api.get('/api/chats');
+      final client = SupabaseService.client;
+      final currentId = SupabaseService.currentUser?.id ?? userId;
+      if (currentId.isEmpty) return;
+
+      final rows = await client
+          .from('conversations')
+          .select(
+            'id,user_one_id,user_two_id,'
+            'user_one:profiles!conversations_user_one_id_fkey(id,username),'
+            'user_two:profiles!conversations_user_two_id_fkey(id,username)',
+          )
+          .or('user_one_id.eq.$currentId,user_two_id.eq.$currentId')
+          .order('created_at', ascending: false);
+
+      final loaded = <Conversation>[];
+
+      for (final raw in rows) {
+        final row = Map<String, dynamic>.from(raw);
+        final otherUser = row['user_one_id'] == currentId
+            ? Map<String, dynamic>.from(row['user_two'] as Map)
+            : Map<String, dynamic>.from(row['user_one'] as Map);
+
+        final conversationId = '${row['id']}';
+
+        final lastMessage = await client
+            .from('messages')
+            .select('body,created_at')
+            .eq('conversation_id', conversationId)
+            .order('created_at', ascending: false)
+            .limit(1)
+            .maybeSingle();
+
+        final createdAt = DateTime.tryParse(
+          '${lastMessage?['created_at'] ?? ''}',
+        )?.toLocal();
+
+        loaded.add(
+          Conversation(
+            userId: '${otherUser['id'] ?? ''}',
+            name: '${otherUser['username'] ?? 'Friend'}',
+            message: '${lastMessage?['body'] ?? 'Start a conversation'}',
+            time: createdAt == null
+                ? ''
+                : '${createdAt.hour.toString().padLeft(2, '0')}:'
+                  '${createdAt.minute.toString().padLeft(2, '0')}',
+          ),
+        );
+      }
+
       _conversations
         ..clear()
-        ..addAll((response['chats'] as List<dynamic>? ?? [])
-            .whereType<Map<String, dynamic>>()
-            .map(Conversation.fromJson));
-    } on ApiException {
-      // Chat history is an independent feature.
+        ..addAll(loaded);
+    } catch (_) {
+      authError = 'Could not load conversations. Please refresh and try again.';
     }
   }
 
@@ -1873,36 +1921,104 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<List<Map<String, dynamic>>> loadMessages(String userId) async {
+  Future<String> _getOrCreateConversationId(String otherUserId) async {
+    final currentId = SupabaseService.currentUser?.id ?? userId;
+
+    if (currentId.isEmpty || otherUserId.isEmpty || currentId == otherUserId) {
+      throw StateError('Invalid conversation participant.');
+    }
+
+    final result = await SupabaseService.client.rpc(
+      'get_or_create_direct_conversation',
+      params: {'p_other_user_id': otherUserId},
+    );
+
+    final conversationId = result?.toString() ?? '';
+    if (conversationId.isEmpty) {
+      throw StateError('Could not create or find this conversation.');
+    }
+
+    return conversationId;
+  }
+
+  Future<List<Map<String, dynamic>>> loadMessages(String otherUserId) async {
     try {
-      final response = await api.get('/api/chats/${Uri.encodeComponent(userId)}/messages');
-      return (response['messages'] as List<dynamic>? ?? [])
-          .whereType<Map<String, dynamic>>()
-          .toList();
-    } on ApiException catch (error) {
-      authError = error.message;
+      final client = SupabaseService.client;
+      final conversationId =
+          await _getOrCreateConversationId(otherUserId);
+
+      final response = await client
+          .from('messages')
+          .select('id,sender_id,body,created_at,read_at')
+          .eq('conversation_id', conversationId)
+          .order('created_at', ascending: true);
+
+      authError = '';
+
+      return response.whereType<Map<String, dynamic>>().map((message) {
+        return {
+          'id': message['id'],
+          'fromUserId': message['sender_id'],
+          'text': message['body'],
+          'createdAt': message['created_at'],
+          'readAt': message['read_at'],
+        };
+      }).toList();
+    } catch (_) {
+      authError = 'Could not load messages. Check your connection and try again.';
       notifyListeners();
       return [];
     }
   }
 
-  Future<bool> sendMessage(String userId, String text) async {
+  Future<bool> sendMessage(String otherUserId, String text) async {
+    final content = text.trim();
+    if (content.isEmpty || content.length > 4000) return false;
+
     try {
-      await api.post('/api/chats/${Uri.encodeComponent(userId)}/messages',
-          body: {'text': text.trim()});
+      final currentId = SupabaseService.currentUser?.id ?? userId;
+      if (currentId.isEmpty) {
+        throw StateError('You must be signed in.');
+      }
+
+      final conversationId =
+          await _getOrCreateConversationId(otherUserId);
+
+      await SupabaseService.client.from('messages').insert({
+        'conversation_id': conversationId,
+        'sender_id': currentId,
+        'body': content,
+      });
+
+      authError = '';
+      await _loadChats();
+      chatEventRevision++;
+      notifyListeners();
       return true;
-    } on ApiException catch (error) {
-      authError = error.message;
+    } catch (_) {
+      authError = 'Could not send your message. Check that you are friends and try again.';
       notifyListeners();
       return false;
     }
   }
 
-  Future<void> markConversationRead(String userId) async {
+  Future<void> markConversationRead(String otherUserId) async {
     try {
-      await api.post('/api/chats/${Uri.encodeComponent(userId)}/read');
-    } on ApiException {
-      // Read receipts are best-effort when offline.
+      final client = SupabaseService.client;
+      final currentId = SupabaseService.currentUser?.id ?? userId;
+      if (currentId.isEmpty) return;
+
+      final conversationId =
+          await _getOrCreateConversationId(otherUserId);
+
+      await client
+          .from('messages')
+          .update({'read_at': DateTime.now().toUtc().toIso8601String()})
+          .eq('conversation_id', conversationId)
+          .neq('sender_id', currentId)
+          .isFilter('read_at', null);
+    } catch (_) {
+      // Read receipts are best-effort.
     }
   }
 

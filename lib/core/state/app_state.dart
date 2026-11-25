@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 
 import '../models/anime_item.dart';
@@ -24,6 +25,10 @@ class AppState extends ChangeNotifier {
   final AnimeNewsService _newsService;
   int _newsRequestGeneration = 0;
   socket_io.Socket? _socket;
+  dynamic _socialChannel;
+  String _socialRealtimeUserId = '';
+  bool _socialRefreshRunning = false;
+  bool _socialRefreshPending = false;
   String realtimeError = '';
   int chatEventRevision = 0;
   int roomChatRevision = 0;
@@ -104,6 +109,92 @@ class AppState extends ChangeNotifier {
   bool get isBackendConfigured => api.isConfigured;
 
 
+
+  Future<void> _stopSocialRealtime() async {
+    final channel = _socialChannel;
+    _socialChannel = null;
+    _socialRealtimeUserId = '';
+
+    if (channel != null && SupabaseService.isInitialized) {
+      try {
+        await SupabaseService.client.removeChannel(channel);
+      } catch (error) {
+        debugPrint('Could not remove social realtime channel: $error');
+      }
+    }
+  }
+
+  Future<void> _startSocialRealtime() async {
+    if (!SupabaseService.isInitialized || userId.isEmpty) return;
+
+    if (_socialChannel != null && _socialRealtimeUserId == userId) {
+      return;
+    }
+
+    await _stopSocialRealtime();
+
+    final currentId = userId;
+    final channel = SupabaseService.client.channel('social-$currentId');
+
+    channel
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'friend_requests',
+          callback: (_) => unawaited(_refreshSocialData()),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'messages',
+          callback: (_) => unawaited(_refreshSocialData()),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'conversations',
+          callback: (_) => unawaited(_refreshSocialData()),
+        )
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'notifications',
+          callback: (_) => unawaited(_refreshSocialData()),
+        )
+        .subscribe();
+
+    _socialChannel = channel;
+    _socialRealtimeUserId = currentId;
+  }
+
+  Future<void> _refreshSocialData() async {
+    if (!isAuthenticated || !SupabaseService.isInitialized) return;
+
+    if (_socialRefreshRunning) {
+      _socialRefreshPending = true;
+      return;
+    }
+
+    _socialRefreshRunning = true;
+
+    try {
+      do {
+        _socialRefreshPending = false;
+
+        await Future.wait([
+          _loadFriends(),
+          _loadChats(),
+          loadNotifications(),
+        ]);
+
+        chatEventRevision++;
+        notifyListeners();
+      } while (_socialRefreshPending);
+    } finally {
+      _socialRefreshRunning = false;
+    }
+  }
+
   Future<void> initialize() async {
     try {
       if (!SupabaseService.isInitialized) {
@@ -118,6 +209,7 @@ class AppState extends ChangeNotifier {
       if (user != null) {
         await _loadSupabaseProfile(user.id);
         isAuthenticated = true;
+        await _startSocialRealtime();
         await loadFeed();
       }
     } catch (_) {
@@ -168,6 +260,7 @@ class AppState extends ChangeNotifier {
     try {
       await _loadSupabaseProfile(user.id);
       isAuthenticated = true;
+      await _startSocialRealtime();
       needsProfileRecovery = false;
       authError = '';
       await loadFeed();
@@ -220,6 +313,7 @@ class AppState extends ChangeNotifier {
 
       await _loadSupabaseProfile(response.user!.id);
       isAuthenticated = true;
+      await _startSocialRealtime();
       await loadFeed();
     });
   }
@@ -241,6 +335,7 @@ class AppState extends ChangeNotifier {
 
       await _loadSupabaseProfile(user.id);
       isAuthenticated = true;
+      await _startSocialRealtime();
       await loadFeed();
     });
   }
@@ -943,7 +1038,18 @@ class AppState extends ChangeNotifier {
       if (updated.isEmpty) {
         friendError = 'This friend request is no longer available.';
       } else {
+        await client
+            .from('notifications')
+            .update({
+              'read_at': DateTime.now().toUtc().toIso8601String(),
+            })
+            .eq('user_id', currentId)
+            .eq('related_id', requestId)
+            .eq('type', 'friend_request');
+
         await _loadFriends();
+        await loadNotifications();
+
         if (friendError.isEmpty) {
           friendError = accept ? 'Friend request accepted.' : '';
         }
@@ -1017,27 +1123,62 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> loadNotifications() async {
+    if (!SupabaseService.isInitialized || userId.isEmpty) return;
+
     try {
-      final response = await api.get('/api/notifications');
+      final response = await SupabaseService.client
+          .from('notifications')
+          .select(
+            'id,type,related_id,read_at,created_at,'
+            'actor:profiles!notifications_actor_id_fkey(username)',
+          )
+          .eq('user_id', userId)
+          .order('created_at', ascending: false)
+          .limit(100);
+
       _notifications
         ..clear()
-        ..addAll((response['notifications'] as List<dynamic>? ?? [])
-            .whereType<Map<String, dynamic>>());
-    } on ApiException {
-      // Notifications are optional and must not block the rest of the app.
+        ..addAll(response.whereType<Map<String, dynamic>>().map((raw) {
+          final row = Map<String, dynamic>.from(raw);
+          final actor = row['actor'] is Map
+              ? Map<String, dynamic>.from(row['actor'] as Map)
+              : <String, dynamic>{};
+
+          return {
+            'id': row['id'],
+            'type': row['type'],
+            'relatedId': row['related_id']?.toString() ?? '',
+            'actorUsername': actor['username'] ?? 'Anime Friend',
+            'readAt': row['read_at'],
+            'createdAt': row['created_at'],
+          };
+        }));
+    } catch (error) {
+      debugPrint('Could not load notifications: $error');
     }
+
     notifyListeners();
   }
 
   Future<void> markNotificationsRead() async {
+    if (!SupabaseService.isInitialized || userId.isEmpty) return;
+
+    final readAt = DateTime.now().toUtc().toIso8601String();
+
     try {
-      await api.post('/api/notifications/read');
+      await SupabaseService.client
+          .from('notifications')
+          .update({'read_at': readAt})
+          .eq('user_id', userId)
+          .isFilter('read_at', null);
+
       for (final item in _notifications) {
-        item['readAt'] ??= DateTime.now().toUtc().toIso8601String();
+        item['readAt'] ??= readAt;
       }
-    } on ApiException {
-      // Leave unread state intact if the server cannot be reached.
+    } catch (error) {
+      debugPrint('Could not mark notifications read: $error');
     }
+
     notifyListeners();
   }
 
@@ -2023,6 +2164,7 @@ class AppState extends ChangeNotifier {
   }
 
   Future<void> signOut() async {
+    await _stopSocialRealtime();
     _socket?.disconnect();
     _socket?.dispose();
     _socket = null;
@@ -2097,6 +2239,7 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    unawaited(_stopSocialRealtime());
     _socket?.dispose();
     _newsService.dispose();
     api.dispose();

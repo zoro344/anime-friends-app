@@ -75,40 +75,74 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                   child: Row(
                     children: [
                       Icon(
-                        unread
-                            ? Icons.notifications_active_outlined
-                            : Icons.notifications_none,
-                        color: unread
-                            ? AppColors.textPrimary
-                            : AppColors.iconMuted,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              _label(item),
-                              style: AppTypography.bodyLarge.copyWith(
-                                fontWeight: unread
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                              ),
+                      unread
+                          ? Icons.notifications_active_outlined
+                          : Icons.notifications_none,
+                      color: unread
+                          ? AppColors.textPrimary
+                          : AppColors.iconMuted,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _label(item),
+                            style: AppTypography.bodyLarge.copyWith(
+                              fontWeight: unread
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
                             ),
-                            const SizedBox(height: 4),
+                          ),
+                          const SizedBox(height: 4),
+                          if (item['type'] == 'friend_request')
                             Text(
-                              '${item['createdAt'] ?? ''}',
+                              '@${item['actorUsername'] ?? 'Anime Friend'} sent you a request',
+                              style: AppTypography.bodySmall,
+                            )
+                          else if (item['type'] == 'friend_accepted')
+                            Text(
+                              '@${item['actorUsername'] ?? 'Anime Friend'} accepted your request',
                               style: AppTypography.bodySmall,
                             ),
+                          const SizedBox(height: 4),
+                          Text(
+                            '${item['createdAt'] ?? ''}',
+                            style: AppTypography.bodySmall,
+                          ),
+                          if (item['type'] == 'friend_request' &&
+                              '${item['relatedId'] ?? ''}'.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              children: [
+                                TextButton(
+                                  onPressed: () => state.respondToFriendRequest(
+                                    '${item['relatedId']}',
+                                    accept: true,
+                                  ),
+                                  child: const Text('Accept'),
+                                ),
+                                TextButton(
+                                  onPressed: () => state.respondToFriendRequest(
+                                    '${item['relatedId']}',
+                                    accept: false,
+                                  ),
+                                  child: const Text('Decline'),
+                                ),
+                              ],
+                            ),
                           ],
-                        ),
+                        ],
                       ),
-                      if (unread)
-                        const Icon(
-                          Icons.circle,
-                          size: 8,
-                          color: AppColors.textPrimary,
-                        ),
+                    ),
+                    if (unread)
+                      const Icon(
+                        Icons.circle,
+                        size: 8,
+                        color: AppColors.textPrimary,
+                      ),
                     ],
                   ),
                 ),

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:firebase_messaging/firebase_messaging.dart' show AuthorizationStatus;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:socket_io_client/socket_io_client.dart' as socket_io;
 
@@ -12,6 +13,7 @@ import '../models/post_comment.dart';
 import '../models/watch_room.dart';
 import '../network/api_client.dart';
 import '../services/supabase_service.dart';
+import '../services/fcm_service.dart';
 import '../services/anime_news_service.dart';
 
 class AppState extends ChangeNotifier {
@@ -23,6 +25,9 @@ class AppState extends ChangeNotifier {
 
   final AnimeFriendsApi api;
   final AnimeNewsService _newsService;
+  StreamSubscription<String>? _fcmTokenSubscription;
+  Future<void>? _fcmRegistrationTask;
+  String _registeredFcmToken = '';
   int _newsRequestGeneration = 0;
   socket_io.Socket? _socket;
   dynamic _socialChannel;
@@ -228,6 +233,7 @@ class AppState extends ChangeNotifier {
       if (user != null) {
         await _loadSupabaseProfile(user.id);
         isAuthenticated = true;
+        _fcmRegistrationTask = _registerFcmToken();
         await _startSocialRealtime();
         await loadFeed();
       }
@@ -279,6 +285,7 @@ class AppState extends ChangeNotifier {
     try {
       await _loadSupabaseProfile(user.id);
       isAuthenticated = true;
+      _fcmRegistrationTask = _registerFcmToken();
       await _startSocialRealtime();
       needsProfileRecovery = false;
       authError = '';
@@ -332,6 +339,7 @@ class AppState extends ChangeNotifier {
 
       await _loadSupabaseProfile(response.user!.id);
       isAuthenticated = true;
+      _fcmRegistrationTask = _registerFcmToken();
       await _startSocialRealtime();
       await loadFeed();
     });
@@ -354,6 +362,7 @@ class AppState extends ChangeNotifier {
 
       await _loadSupabaseProfile(user.id);
       isAuthenticated = true;
+      _fcmRegistrationTask = _registerFcmToken();
       await _startSocialRealtime();
       await loadFeed();
     });
@@ -413,6 +422,97 @@ class AppState extends ChangeNotifier {
     } finally {
       isBusy = false;
       notifyListeners();
+    }
+  }
+
+
+  void _listenForFcmTokenRefresh() {
+    if (_fcmTokenSubscription != null ||
+        !FcmService.instance.isInitialized) {
+      return;
+    }
+
+    _fcmTokenSubscription =
+        FcmService.instance.onTokenRefresh.listen((token) {
+      if (isAuthenticated && userId.isNotEmpty) {
+        unawaited(_saveFcmToken(token));
+      }
+    });
+  }
+
+  Future<void> _registerFcmToken() async {
+    if (!isAuthenticated ||
+        userId.isEmpty ||
+        !FcmService.instance.isInitialized) {
+      return;
+    }
+
+    try {
+      final permission =
+          await FcmService.instance.requestPermission();
+
+      if (permission == null ||
+          permission.authorizationStatus ==
+              AuthorizationStatus.denied) {
+        return;
+      }
+
+      _listenForFcmTokenRefresh();
+
+      final token = await FcmService.instance.getToken();
+      if (token != null && token.isNotEmpty) {
+        await _saveFcmToken(token);
+      }
+    } catch (error) {
+      debugPrint('FCM token registration failed: $error');
+    }
+  }
+
+  Future<void> _saveFcmToken(String token) async {
+    if (!isAuthenticated ||
+        userId.isEmpty ||
+        !SupabaseService.isInitialized ||
+        token.isEmpty) {
+      return;
+    }
+
+    try {
+      await SupabaseService.client
+          .from('user_fcm_tokens')
+          .upsert({
+        'user_id': userId,
+        'token': token,
+        'platform': 'android',
+        'updated_at': DateTime.now().toUtc().toIso8601String(),
+      }, onConflict: 'token');
+
+      _registeredFcmToken = token;
+    } catch (error) {
+      debugPrint('Could not save FCM token: $error');
+    }
+  }
+
+  Future<void> _removeFcmToken() async {
+    if (!SupabaseService.isInitialized || userId.isEmpty) {
+      return;
+    }
+
+    try {
+      final token = _registeredFcmToken.isNotEmpty
+          ? _registeredFcmToken
+          : await FcmService.instance.getToken();
+
+      if (token == null || token.isEmpty) return;
+
+      await SupabaseService.client
+          .from('user_fcm_tokens')
+          .delete()
+          .eq('user_id', userId)
+          .eq('token', token);
+
+      _registeredFcmToken = '';
+    } catch (error) {
+      debugPrint('Could not remove this device FCM token: $error');
     }
   }
 
@@ -2202,6 +2302,9 @@ class AppState extends ChangeNotifier {
     authError = '';
     authMessage = '';
 
+    await _fcmRegistrationTask;
+    await _removeFcmToken();
+
     try {
       if (SupabaseService.isInitialized) {
         await SupabaseService.instance.signOut();
@@ -2269,6 +2372,8 @@ class AppState extends ChangeNotifier {
 
   @override
   void dispose() {
+    unawaited(_fcmTokenSubscription?.cancel());
+    _fcmTokenSubscription = null;
     unawaited(_stopSocialRealtime());
     _socket?.dispose();
     _newsService.dispose();

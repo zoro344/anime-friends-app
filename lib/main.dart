@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app/app_theme.dart';
 import 'core/services/supabase_service.dart';
+import 'core/services/fcm_service.dart';
 import 'core/state/app_state.dart';
 import 'core/state/app_state_scope.dart';
 import 'features/anime/presentation/screens/anime_screen.dart';
@@ -16,6 +17,11 @@ import 'features/watch/presentation/screens/watch_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase independently so a notification setup
+  // failure does not prevent the app from opening.
+  await FcmService.instance.initialize();
+
 
   try {
     await SupabaseService.initialize();

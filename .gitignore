@@ -40,3 +40,6 @@ backend/backups/
 *.apk
 *.aab
 *.zip
+
+# Firebase configuration (generated in CI from GitHub secret)
+android/app/google-services.json

@@ -20,6 +20,7 @@ class FcmService {
       FlutterLocalNotificationsPlugin();
 
   bool _initialized = false;
+
   bool get isInitialized => _initialized;
 
   Future<void> initialize() async {
@@ -32,9 +33,7 @@ class FcmService {
         android: AndroidInitializationSettings('@mipmap/ic_launcher'),
       );
 
-      await _localNotifications.initialize(
-        settings: initializationSettings,
-      );
+      await _localNotifications.initialize(initializationSettings);
 
       final androidPlugin = _localNotifications
           .resolvePlatformSpecificImplementation<
@@ -88,10 +87,10 @@ class FcmService {
 
     try {
       await _localNotifications.show(
-        id: message.messageId?.hashCode ?? message.hashCode,
-        title: title ?? 'Anime Friends',
-        body: body ?? 'You have a new update.',
-        notificationDetails: NotificationDetails(
+        message.messageId?.hashCode ?? message.hashCode,
+        title ?? 'Anime Friends',
+        body ?? 'You have a new update.',
+        NotificationDetails(
           android: AndroidNotificationDetails(
             _channel.id,
             _channel.name,

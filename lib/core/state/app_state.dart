@@ -29,6 +29,7 @@ class AppState extends ChangeNotifier {
   String _socialRealtimeUserId = '';
   bool _socialRefreshRunning = false;
   bool _socialRefreshPending = false;
+  Timer? _socialRefreshTimer;
   String realtimeError = '';
   int chatEventRevision = 0;
   int roomChatRevision = 0;
@@ -111,6 +112,8 @@ class AppState extends ChangeNotifier {
 
 
   Future<void> _stopSocialRealtime() async {
+    _socialRefreshTimer?.cancel();
+    _socialRefreshTimer = null;
     final channel = _socialChannel;
     _socialChannel = null;
     _socialRealtimeUserId = '';
@@ -124,10 +127,18 @@ class AppState extends ChangeNotifier {
     }
   }
 
+  void _startSocialRefreshTimer() {
+    _socialRefreshTimer ??= Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => unawaited(_refreshSocialData()),
+    );
+  }
+
   Future<void> _startSocialRealtime() async {
     if (!SupabaseService.isInitialized || userId.isEmpty) return;
 
     if (_socialChannel != null && _socialRealtimeUserId == userId) {
+      _startSocialRefreshTimer();
       return;
     }
 
@@ -165,6 +176,8 @@ class AppState extends ChangeNotifier {
 
     _socialChannel = channel;
     _socialRealtimeUserId = currentId;
+    _startSocialRefreshTimer();
+    unawaited(_refreshSocialData());
   }
 
   Future<void> _refreshSocialData() async {

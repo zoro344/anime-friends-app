@@ -99,6 +99,12 @@ class AppState extends ChangeNotifier {
   final List<Map<String, dynamic>> _notifications = [];
   List<Map<String, dynamic>> get notifications => List.unmodifiable(_notifications);
   int get unreadNotificationCount => _notifications.where((item) => item['readAt'] == null).length;
+
+  int get unreadMessageCount =>
+      _conversations.fold(0, (total, chat) => total + chat.unreadCount);
+
+  bool get hasUnreadActivity =>
+      unreadNotificationCount > 0 || unreadMessageCount > 0;
   List<Map<String, dynamic>> get newsItems => List.unmodifiable(_newsItems);
   String newsError = '';
   List<Map<String, dynamic>> get friends => List.unmodifiable(_friends);
@@ -873,6 +879,13 @@ class AppState extends ChangeNotifier {
             .limit(1)
             .maybeSingle();
 
+        final unreadMessages = await client
+            .from('messages')
+            .select('id')
+            .eq('conversation_id', conversationId)
+            .neq('sender_id', currentId)
+            .isFilter('read_at', null);
+
         final createdAt = DateTime.tryParse(
           '${lastMessage?['created_at'] ?? ''}',
         )?.toLocal();
@@ -886,6 +899,7 @@ class AppState extends ChangeNotifier {
                 ? ''
                 : '${createdAt.hour.toString().padLeft(2, '0')}:'
                   '${createdAt.minute.toString().padLeft(2, '0')}',
+            unreadCount: unreadMessages.length,
           ),
         );
       }
@@ -2171,6 +2185,9 @@ class AppState extends ChangeNotifier {
           .eq('conversation_id', conversationId)
           .neq('sender_id', currentId)
           .isFilter('read_at', null);
+
+      await _loadChats();
+      notifyListeners();
     } catch (_) {
       // Read receipts are best-effort.
     }

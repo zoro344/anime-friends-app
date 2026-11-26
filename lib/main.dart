@@ -121,6 +121,9 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final state = AppStateScope.of(context);
+    final hasUnreadActivity = state.hasUnreadActivity;
+
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -179,7 +182,29 @@ class _MainScreenState extends State<MainScreen> {
                 builder: (_) => const NotificationsScreen(),
               ),
             ),
-            icon: const Icon(Icons.notifications_none),
+            icon: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                const Icon(Icons.notifications_none),
+                if (hasUnreadActivity)
+                  Positioned(
+                    top: -1,
+                    right: -1,
+                    child: Container(
+                      width: 9,
+                      height: 9,
+                      decoration: BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: Theme.of(context).colorScheme.surface,
+                          width: 1,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
         ],
       ),

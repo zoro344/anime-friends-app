@@ -3,12 +3,14 @@ class Conversation {
   final String name;
   final String message;
   final String time;
+  final int unreadCount;
 
   const Conversation({
     required this.userId,
     required this.name,
     required this.message,
     required this.time,
+    this.unreadCount = 0,
   });
 
   factory Conversation.fromJson(Map<String, dynamic> json) {

@@ -471,13 +471,11 @@ class _MangaScreenState extends State<MangaScreen> {
                 message: 'Try another title or spelling.',
               )
             else
-              ..._searchResults.map(
-                (manga) => _MangaTile(
-                  manga: manga,
-                  saved: savedIds.contains(manga.id),
-                  onTap: () => _openDetails(manga),
-                  onAdd: () => _addToLibrary(manga),
-                ),
+              _MangaGrid(
+                manga: _searchResults,
+                savedIds: savedIds,
+                onTap: _openDetails,
+                onAdd: _addToLibrary,
               ),
           ] else ...[
                     _mangaCategorySelector(),
@@ -523,16 +521,13 @@ class _MangaScreenState extends State<MangaScreen> {
                         message: 'MyAnimeList did not return manga for this category.',
                       )
                     else
-                      ...(_selectedMangaCategory == 0
-                              ? _popular
-                              : _topRanked)
-                          .map(
-                        (manga) => _MangaTile(
-                          manga: manga,
-                          saved: savedIds.contains(manga.id),
-                          onTap: () => _openDetails(manga),
-                          onAdd: () => _addToLibrary(manga),
-                        ),
+                      _MangaGrid(
+                        manga: _selectedMangaCategory == 0
+                            ? _popular
+                            : _topRanked,
+                        savedIds: savedIds,
+                        onTap: _openDetails,
+                        onAdd: _addToLibrary,
                       ),
                   ],
         ],
@@ -699,8 +694,48 @@ class _MangaInfoChip extends StatelessWidget {
   }
 }
 
-class _MangaTile extends StatelessWidget {
-  const _MangaTile({
+
+class _MangaGrid extends StatelessWidget {
+  const _MangaGrid({
+    required this.manga,
+    required this.savedIds,
+    required this.onTap,
+    required this.onAdd,
+  });
+
+  final List<MangaItem> manga;
+  final Set<String> savedIds;
+  final ValueChanged<MangaItem> onTap;
+  final ValueChanged<MangaItem> onAdd;
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: manga.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 14,
+        childAspectRatio: 0.58,
+      ),
+      itemBuilder: (context, index) {
+        final item = manga[index];
+
+        return _MangaGridCard(
+          manga: item,
+          saved: savedIds.contains(item.id),
+          onTap: () => onTap(item),
+          onAdd: () => onAdd(item),
+        );
+      },
+    );
+  }
+}
+
+class _MangaGridCard extends StatelessWidget {
+  const _MangaGridCard({
     required this.manga,
     required this.saved,
     required this.onTap,
@@ -714,27 +749,107 @@ class _MangaTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    final metadata = [
+      if (manga.type.isNotEmpty) manga.type.toUpperCase(),
+      if (manga.year.isNotEmpty) manga.year,
+      if (manga.chapters != 'Unknown') '${manga.chapters} ch.',
+    ].join(' • ');
+
+    return Material(
       color: _surface,
-      margin: const EdgeInsets.only(bottom: 11),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Colors.white10),
-      ),
+      borderRadius: BorderRadius.circular(17),
+      clipBehavior: Clip.antiAlias,
       child: InkWell(
-        borderRadius: BorderRadius.circular(16),
         onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Row(
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
+            borderRadius: BorderRadius.circular(17),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _MangaPoster(
-                manga: manga,
-                width: 72,
-                height: 94,
-              ),
-              const SizedBox(width: 12),
               Expanded(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    manga.coverUrl.isEmpty
+                        ? const ColoredBox(
+                            color: Color(0xFF292033),
+                            child: Center(
+                              child: Icon(
+                                Icons.menu_book_outlined,
+                                color: Colors.white54,
+                                size: 38,
+                              ),
+                            ),
+                          )
+                        : Image.network(
+                            manga.coverUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, _, _) => const ColoredBox(
+                              color: Color(0xFF292033),
+                              child: Center(
+                                child: Icon(
+                                  Icons.broken_image_outlined,
+                                  color: Colors.white54,
+                                  size: 32,
+                                ),
+                              ),
+                            ),
+                          ),
+                    Positioned(
+                      left: 8,
+                      top: 8,
+                      child: _MangaInfoChip(
+                        icon: Icons.star_rounded,
+                        label: manga.score,
+                        color: _orange,
+                      ),
+                    ),
+                    Positioned(
+                      right: 7,
+                      top: 7,
+                      child: Material(
+                        color: Colors.black.withValues(alpha: 0.62),
+                        shape: const CircleBorder(),
+                        child: IconButton(
+                          visualDensity: VisualDensity.compact,
+                          tooltip: saved ? 'Already saved' : 'Add to library',
+                          onPressed: saved ? null : onAdd,
+                          icon: Icon(
+                            saved
+                                ? Icons.bookmark
+                                : Icons.bookmark_add_outlined,
+                            color: saved ? _orange : Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: 54,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.transparent,
+                              Color(0xAA08060D),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(10, 9, 10, 10),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -744,47 +859,23 @@ class _MangaTile extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                        fontSize: 13,
+                        height: 1.2,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      manga.genre.isEmpty ? manga.type : manga.genre,
-                      maxLines: 2,
+                      metadata.isEmpty ? 'Manga' : metadata,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: Colors.white60,
-                        fontSize: 11,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
                       ),
                     ),
-                    const SizedBox(height: 7),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 5,
-                      children: [
-                        _InfoChip(
-                          icon: Icons.star_rounded,
-                          label: manga.score,
-                          color: _orange,
-                        ),
-                        if (manga.chapters != 'Unknown')
-                          _InfoChip(
-                            icon: Icons.menu_book_outlined,
-                            label: '${manga.chapters} ch.',
-                            color: _blue,
-                          ),
-                      ],
-                    ),
                   ],
-                ),
-              ),
-              IconButton(
-                tooltip: saved ? 'Already saved' : 'Add to library',
-                onPressed: saved ? null : onAdd,
-                icon: Icon(
-                  saved ? Icons.bookmark : Icons.bookmark_border,
-                  color: saved ? _orange : Colors.white70,
                 ),
               ),
             ],

@@ -484,14 +484,12 @@ class _AnimeScreenState extends State<AnimeScreen> {
                 message: 'Try another title or spelling.',
               )
             else
-              ..._searchResults.map(
-                (anime) => _AnimeTile(
-                  anime: anime,
-                  saved: watchlist.contains(anime.name),
-                  onTap: () => _openDetails(anime),
-                  onShare: () => _shareAnime(anime),
-                  onBookmark: () => appState.toggleWatchlist(anime),
-                ),
+              _AnimeGrid(
+                items: _searchResults,
+                watchlist: watchlist,
+                onTap: _openDetails,
+                onShare: _shareAnime,
+                onBookmark: appState.toggleWatchlist,
               ),
           ] else ...[
             _tabSelector(),
@@ -538,17 +536,14 @@ class _AnimeScreenState extends State<AnimeScreen> {
                         message: 'No titles were returned for this category.',
                       )
                     else
-                      ...(_selectedDiscovery == 0
-                              ? _popular
-                              : _discoveryResults)
-                          .map(
-                        (anime) => _AnimeTile(
-                          anime: anime,
-                          saved: watchlist.contains(anime.name),
-                          onTap: () => _openDetails(anime),
-                          onShare: () => _shareAnime(anime),
-                          onBookmark: () => appState.toggleWatchlist(anime),
-                        ),
+                      _AnimeGrid(
+                        items: _selectedDiscovery == 0
+                            ? _popular
+                            : _discoveryResults,
+                        watchlist: watchlist,
+                        onTap: _openDetails,
+                        onShare: _shareAnime,
+                        onBookmark: appState.toggleWatchlist,
                       ),
                   ] else ...[
               _sectionTitle('Weekly airing calendar', _teal),
@@ -597,22 +592,67 @@ class _AnimeScreenState extends State<AnimeScreen> {
             )
           else
             ...watchlist.map(
-              (name) => Card(
-                color: _surface,
-                child: ListTile(
-                  leading: const Icon(Icons.bookmark, color: _orange),
-                  title: Text(
-                    name,
-                    style: const TextStyle(color: Colors.white),
-                  ),
-                  trailing: IconButton(
-                    tooltip: 'Remove from watchlist',
-                    onPressed: () => appState.removeFromWatchlist(name),
-                    icon: const Icon(
-                      Icons.remove_circle_outline,
-                      color: Colors.white60,
+              (name) => Container(
+                margin: const EdgeInsets.only(bottom: 10),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                decoration: BoxDecoration(
+                  color: _surface,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 46,
+                      height: 46,
+                      decoration: BoxDecoration(
+                        color: _orange.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(13),
+                      ),
+                      child: const Icon(
+                        Icons.bookmark_added_rounded,
+                        color: _orange,
+                        size: 23,
+                      ),
                     ),
-                  ),
+                    const SizedBox(width: 13),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Saved to your watchlist',
+                            style: TextStyle(
+                              color: Colors.white60,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Remove from watchlist',
+                      onPressed: () => appState.removeFromWatchlist(name),
+                      icon: const Icon(
+                        Icons.remove_circle_outline_rounded,
+                        color: Colors.white60,
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -853,6 +893,196 @@ class _AnimeScreenState extends State<AnimeScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+
+class _AnimeGrid extends StatelessWidget {
+  const _AnimeGrid({
+    required this.items,
+    required this.watchlist,
+    required this.onTap,
+    required this.onShare,
+    required this.onBookmark,
+  });
+
+  final List<AnimeItem> items;
+  final Set<String> watchlist;
+  final ValueChanged<AnimeItem> onTap;
+  final ValueChanged<AnimeItem> onShare;
+  final ValueChanged<AnimeItem> onBookmark;
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: items.length,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        crossAxisSpacing: 12,
+        mainAxisSpacing: 16,
+        childAspectRatio: 0.66,
+      ),
+      itemBuilder: (context, index) {
+        final anime = items[index];
+
+        return _AnimeGridCard(
+          anime: anime,
+          saved: watchlist.contains(anime.name),
+          onTap: () => onTap(anime),
+          onShare: () => onShare(anime),
+          onBookmark: () => onBookmark(anime),
+        );
+      },
+    );
+  }
+}
+
+class _AnimeGridCard extends StatelessWidget {
+  const _AnimeGridCard({
+    required this.anime,
+    required this.saved,
+    required this.onTap,
+    required this.onShare,
+    required this.onBookmark,
+  });
+
+  final AnimeItem anime;
+  final bool saved;
+  final VoidCallback onTap;
+  final VoidCallback onShare;
+  final VoidCallback onBookmark;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: _surface,
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  if (anime.coverUrl.isNotEmpty)
+                    Image.network(
+                      anime.coverUrl,
+                      fit: BoxFit.cover,
+                      errorBuilder: (_, _, _) => const ColoredBox(
+                        color: Color(0xFF292033),
+                        child: Icon(
+                          Icons.broken_image_outlined,
+                          color: Colors.white54,
+                          size: 30,
+                        ),
+                      ),
+                    )
+                  else
+                    const ColoredBox(
+                      color: Color(0xFF292033),
+                      child: Icon(
+                        Icons.movie_outlined,
+                        color: Colors.white54,
+                        size: 30,
+                      ),
+                    ),
+                  Positioned(
+                    top: 7,
+                    right: 7,
+                    child: Material(
+                      color: Colors.black.withValues(alpha: 0.65),
+                      shape: const CircleBorder(),
+                      child: IconButton(
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(
+                          minWidth: 34,
+                          minHeight: 34,
+                        ),
+                        padding: EdgeInsets.zero,
+                        tooltip: saved ? 'Saved' : 'Add to watchlist',
+                        onPressed: onBookmark,
+                        icon: Icon(
+                          saved
+                              ? Icons.bookmark_rounded
+                              : Icons.bookmark_border_rounded,
+                          color: saved ? _pink : Colors.white,
+                          size: 19,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(9, 9, 7, 7),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    anime.name,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      height: 1.2,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Row(
+                    children: [
+                      if (anime.score.isNotEmpty) ...[
+                        const Icon(
+                          Icons.star_rounded,
+                          color: _orange,
+                          size: 15,
+                        ),
+                        const SizedBox(width: 3),
+                        Expanded(
+                          child: Text(
+                            anime.score,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _orange,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ] else
+                        const Spacer(),
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(
+                          minWidth: 30,
+                          minHeight: 30,
+                        ),
+                        padding: EdgeInsets.zero,
+                        tooltip: 'Share anime',
+                        onPressed: onShare,
+                        icon: const Icon(
+                          Icons.share_outlined,
+                          color: _blue,
+                          size: 17,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -52,6 +52,8 @@ class _AnimeScreenState extends State<AnimeScreen> {
   bool _loadingSchedule = false;
   String _scheduleError = '';
   int _scheduleRequestGeneration = 0;
+  int _discoveryRequestGeneration = 0;
+  int _searchRequestGeneration = 0;
 
   String _error = '';
   String _searchError = '';
@@ -142,6 +144,8 @@ class _AnimeScreenState extends State<AnimeScreen> {
   Future<void> _loadDiscovery(int category) async {
     if (category < 1 || category >= _discoveryCategories.length) return;
 
+    final requestId = ++_discoveryRequestGeneration;
+
     setState(() {
       _loadingDiscovery = true;
       _discoveryError = '';
@@ -167,14 +171,22 @@ class _AnimeScreenState extends State<AnimeScreen> {
           return;
       }
 
-      if (!mounted || _selectedDiscovery != category) return;
+      if (!mounted ||
+          requestId != _discoveryRequestGeneration ||
+          _selectedDiscovery != category) {
+        return;
+      }
 
       setState(() {
         _discoveryResults = results;
         _loadingDiscovery = false;
       });
     } catch (error) {
-      if (!mounted || _selectedDiscovery != category) return;
+      if (!mounted ||
+          requestId != _discoveryRequestGeneration ||
+          _selectedDiscovery != category) {
+        return;
+      }
 
       setState(() {
         _discoveryError = _cleanError(error);
@@ -185,6 +197,7 @@ class _AnimeScreenState extends State<AnimeScreen> {
 
   void _onSearchChanged(String value) {
     _searchTimer?.cancel();
+    ++_searchRequestGeneration;
 
     if (value.trim().isEmpty) {
       setState(() {
@@ -201,6 +214,8 @@ class _AnimeScreenState extends State<AnimeScreen> {
   }
 
   Future<void> _searchAnime(String query) async {
+    final requestId = ++_searchRequestGeneration;
+
     setState(() {
       _loadingSearch = true;
       _searchError = '';
@@ -208,14 +223,23 @@ class _AnimeScreenState extends State<AnimeScreen> {
 
     try {
       final results = await _mal.searchAnime(query);
-      if (!mounted || _searchController.text.trim() != query) return;
+      if (!mounted ||
+          requestId != _searchRequestGeneration ||
+          _searchController.text.trim() != query) {
+        return;
+      }
 
       setState(() {
         _searchResults = results;
         _loadingSearch = false;
       });
     } catch (error) {
-      if (!mounted) return;
+      if (!mounted ||
+          requestId != _searchRequestGeneration ||
+          _searchController.text.trim() != query) {
+        return;
+      }
+
       setState(() {
         _searchError = _cleanError(error);
         _loadingSearch = false;
@@ -413,59 +437,165 @@ class _AnimeScreenState extends State<AnimeScreen> {
     return Container(
       color: _background,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 28),
+        padding: const EdgeInsets.fromLTRB(18, 18, 18, 32),
         children: [
-          const Text(
-            'Anime Universe',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 25,
-              fontWeight: FontWeight.w800,
+          Row(
+            children: [
+              Container(
+                width: 43,
+                height: 43,
+                decoration: BoxDecoration(
+                  color: _purple.withValues(alpha: 0.16),
+                  borderRadius: BorderRadius.circular(15),
+                  border: Border.all(
+                    color: _purple.withValues(alpha: 0.35),
+                  ),
+                ),
+                child: const Icon(
+                  Icons.auto_awesome_rounded,
+                  color: _purple,
+                  size: 23,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'ANIME FRIENDS',
+                      style: TextStyle(
+                        color: _purple,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 2,
+                      ),
+                    ),
+                    SizedBox(height: 3),
+                    Text(
+                      'Anime Universe',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 23,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.7,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: _surface,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: Colors.white10),
+                ),
+                child: const Icon(
+                  Icons.explore_outlined,
+                  color: Colors.white70,
+                  size: 20,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Padding(
+            padding: EdgeInsets.only(left: 55),
+            child: Text(
+              'Find your next favourite story.',
+              style: TextStyle(
+                color: Colors.white54,
+                fontSize: 13,
+              ),
             ),
           ),
-          const SizedBox(height: 5),
-          const Text(
-            'Discover stories worth getting lost in.',
-            style: TextStyle(color: Colors.white60),
-          ),
-          const SizedBox(height: 18),
-          TextField(
-            controller: _searchController,
-            onChanged: _onSearchChanged,
-            style: const TextStyle(color: Colors.white),
-            decoration: InputDecoration(
-              hintText: 'Search anime titles...',
-              hintStyle: const TextStyle(color: Colors.white54),
-              prefixIcon: const Icon(Icons.search, color: _purple),
-              suffixIcon: IconButton(
-                onPressed: () {
-                  _searchController.clear();
-                  _onSearchChanged('');
-                  setState(() {});
-                },
-                icon: const Icon(Icons.close, color: Colors.white54),
+          const SizedBox(height: 23),
+
+          Container(
+            decoration: BoxDecoration(
+              color: _surface,
+              borderRadius: BorderRadius.circular(17),
+              border: Border.all(color: Colors.white10),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.18),
+                  blurRadius: 18,
+                  offset: const Offset(0, 7),
+                ),
+              ],
+            ),
+            child: TextField(
+              controller: _searchController,
+              onChanged: _onSearchChanged,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 14,
               ),
-              filled: true,
-              fillColor: _surface,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(16),
-                borderSide: BorderSide.none,
+              decoration: InputDecoration(
+                hintText: 'Search anime titles...',
+                hintStyle: const TextStyle(
+                  color: Colors.white38,
+                  fontSize: 13,
+                ),
+                prefixIcon: const Icon(
+                  Icons.search_rounded,
+                  color: _purple,
+                  size: 22,
+                ),
+                suffixIcon: _searchController.text.isEmpty
+                    ? null
+                    : IconButton(
+                        onPressed: () {
+                          _searchController.clear();
+                          _onSearchChanged('');
+                          setState(() {});
+                        },
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          color: Colors.white54,
+                          size: 19,
+                        ),
+                      ),
+                filled: true,
+                fillColor: Colors.transparent,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 17,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(17),
+                  borderSide: BorderSide.none,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(17),
+                  borderSide: BorderSide.none,
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(17),
+                  borderSide: BorderSide(
+                    color: _purple.withValues(alpha: 0.65),
+                  ),
+                ),
               ),
             ),
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 22),
+
           if (!searchActive &&
+              _selectedTab == 0 &&
               _selectedDiscovery == 0 &&
               _popular.isNotEmpty) ...[
             _featuredAnimeCard(
               _popular.first,
               onTap: () => _openDetails(_popular.first),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 25),
           ],
+
           if (searchActive) ...[
             _sectionTitle('Search results', _blue),
-            const SizedBox(height: 12),
+            const SizedBox(height: 13),
             if (_loadingSearch)
               const Center(
                 child: Padding(
@@ -474,9 +604,10 @@ class _AnimeScreenState extends State<AnimeScreen> {
                 ),
               )
             else if (_searchError.isNotEmpty)
-              _ErrorPanel(message: _searchError, onRetry: () {
-                _searchAnime(_searchController.text.trim());
-              })
+              _ErrorPanel(
+                message: _searchError,
+                onRetry: () => _searchAnime(_searchController.text.trim()),
+              )
             else if (_searchResults.isEmpty)
               const _EmptyPanel(
                 icon: Icons.search_off,
@@ -493,63 +624,88 @@ class _AnimeScreenState extends State<AnimeScreen> {
               ),
           ] else ...[
             _tabSelector(),
-            const SizedBox(height: 20),
+            const SizedBox(height: 23),
+
             if (_selectedTab == 0) ...[
-                    _discoverySelector(),
-                    const SizedBox(height: 16),
-                    _sectionTitle(
+              _discoverySelector(),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  Expanded(
+                    child: _sectionTitle(
                       _discoveryCategories[_selectedDiscovery],
                       _pink,
                     ),
-                    const SizedBox(height: 12),
-                    if (_selectedDiscovery == 0 && _loadingPopular)
-                      const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: CircularProgressIndicator(color: _purple),
-                        ),
-                      )
-                    else if (_selectedDiscovery == 0 && _error.isNotEmpty)
-                      _ErrorPanel(
-                        message: _error,
-                        onRetry: _loadPopular,
-                      )
-                    else if (_selectedDiscovery != 0 && _loadingDiscovery)
-                      const Center(
-                        child: Padding(
-                          padding: EdgeInsets.all(24),
-                          child: CircularProgressIndicator(color: _purple),
-                        ),
-                      )
-                    else if (_selectedDiscovery != 0 &&
-                        _discoveryError.isNotEmpty)
-                      _ErrorPanel(
-                        message: _discoveryError,
-                        onRetry: () => _loadDiscovery(_selectedDiscovery),
-                      )
-                    else if ((_selectedDiscovery == 0
-                            ? _popular
-                            : _discoveryResults).isEmpty)
-                      const _EmptyPanel(
-                        icon: Icons.movie_filter_outlined,
-                        title: 'No anime available',
-                        message: 'No titles were returned for this category.',
-                      )
-                    else
-                      _AnimeGrid(
-                        items: _selectedDiscovery == 0
-                            ? _popular
-                            : _discoveryResults,
-                        watchlist: watchlist,
-                        onTap: _openDetails,
-                        onShare: _shareAnime,
-                        onBookmark: appState.toggleWatchlist,
+                  ),
+                  if (_selectedDiscovery == 0)
+                    const Text(
+                      'TRENDING',
+                      style: TextStyle(
+                        color: _pink,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.3,
                       ),
-                  ] else ...[
-              _sectionTitle('Weekly airing calendar', _teal),
-              const SizedBox(height: 12),
-              _daySelector(),
+                    ),
+                ],
+              ),
               const SizedBox(height: 14),
+              if (_selectedDiscovery == 0 && _loadingPopular)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: CircularProgressIndicator(color: _purple),
+                  ),
+                )
+              else if (_selectedDiscovery == 0 && _error.isNotEmpty)
+                _ErrorPanel(
+                  message: _error,
+                  onRetry: _loadPopular,
+                )
+              else if (_selectedDiscovery != 0 && _loadingDiscovery)
+                const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: CircularProgressIndicator(color: _purple),
+                  ),
+                )
+              else if (_selectedDiscovery != 0 &&
+                  _discoveryError.isNotEmpty)
+                _ErrorPanel(
+                  message: _discoveryError,
+                  onRetry: () => _loadDiscovery(_selectedDiscovery),
+                )
+              else if ((_selectedDiscovery == 0
+                      ? _popular
+                      : _discoveryResults).isEmpty)
+                const _EmptyPanel(
+                  icon: Icons.movie_filter_outlined,
+                  title: 'No anime available',
+                  message: 'No titles were returned for this category.',
+                )
+              else
+                _AnimeGrid(
+                  items: _selectedDiscovery == 0
+                      ? _popular
+                      : _discoveryResults,
+                  watchlist: watchlist,
+                  onTap: _openDetails,
+                  onShare: _shareAnime,
+                  onBookmark: appState.toggleWatchlist,
+                ),
+            ] else ...[
+              _sectionTitle('Weekly airing calendar', _teal),
+              const SizedBox(height: 7),
+              const Text(
+                'See what is airing throughout the week.',
+                style: TextStyle(
+                  color: Colors.white54,
+                  fontSize: 12,
+                ),
+              ),
+              const SizedBox(height: 17),
+              _daySelector(),
+              const SizedBox(height: 17),
               if (_loadingSchedule)
                 const Center(
                   child: Padding(
@@ -581,9 +737,24 @@ class _AnimeScreenState extends State<AnimeScreen> {
                 ),
             ],
           ],
-          const SizedBox(height: 20),
-          _sectionTitle('My watchlist', _orange),
-          const SizedBox(height: 10),
+
+          if (!searchActive && _selectedTab == 0) ...[
+          const SizedBox(height: 27),
+          Row(
+            children: [
+              Expanded(child: _sectionTitle('My watchlist', _orange)),
+              Text(
+                '${watchlist.length} SAVED',
+                style: const TextStyle(
+                  color: _orange,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 13),
           if (watchlist.isEmpty)
             const _EmptyPanel(
               icon: Icons.bookmark_outline,
@@ -601,7 +772,7 @@ class _AnimeScreenState extends State<AnimeScreen> {
                 decoration: BoxDecoration(
                   color: _surface,
                   borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: Colors.white12),
+                  border: Border.all(color: Colors.white10),
                 ),
                 child: Row(
                   children: [
@@ -656,6 +827,7 @@ class _AnimeScreenState extends State<AnimeScreen> {
                 ),
               ),
             ),
+          ],
         ],
       ),
     );
@@ -666,13 +838,13 @@ class _AnimeScreenState extends State<AnimeScreen> {
     required VoidCallback onTap,
   }) {
     return ClipRRect(
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(23),
       child: Material(
         color: _surface,
         child: InkWell(
           onTap: onTap,
           child: SizedBox(
-            height: 210,
+            height: 238,
             width: double.infinity,
             child: Stack(
               fit: StackFit.expand,
@@ -681,38 +853,79 @@ class _AnimeScreenState extends State<AnimeScreen> {
                   Image.network(
                     anime.coverUrl,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const ColoredBox(
-                      color: _surface,
-                    ),
+                    errorBuilder: (_, _, _) =>
+                        const ColoredBox(color: _surface),
                   )
                 else
                   const ColoredBox(color: _surface),
                 const DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      begin: Alignment.centerRight,
-                      end: Alignment.centerLeft,
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
                       colors: [
-                        Color(0xCC08060D),
-                        Color(0x9908060D),
-                        Color(0x3308060D),
+                        Color(0x2208060D),
+                        Color(0x6608060D),
+                        Color(0xF508060D),
                       ],
+                      stops: [0.0, 0.38, 1.0],
                     ),
                   ),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(18),
+                Positioned(
+                  top: 14,
+                  left: 14,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 11,
+                      vertical: 7,
+                    ),
+                    decoration: BoxDecoration(
+                      color: _purple,
+                      borderRadius: BorderRadius.circular(30),
+                    ),
+                    child: const Text(
+                      '✦  FEATURED',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 1.2,
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 14,
+                  right: 14,
+                  child: Container(
+                    padding: const EdgeInsets.all(9),
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.48),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white24),
+                    ),
+                    child: const Icon(
+                      Icons.open_in_new_rounded,
+                      color: Colors.white,
+                      size: 16,
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: 18,
+                  right: 18,
+                  bottom: 17,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       const Text(
-                        'FEATURED ANIME',
+                        'YOUR NEXT OBSESSION STARTS HERE',
                         style: TextStyle(
-                          color: _pink,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w800,
-                          letterSpacing: 1.5,
+                          color: Color(0xFFFFA7D0),
+                          fontSize: 9,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1.25,
                         ),
                       ),
                       const SizedBox(height: 7),
@@ -724,12 +937,16 @@ class _AnimeScreenState extends State<AnimeScreen> {
                           color: Colors.white,
                           fontSize: 23,
                           fontWeight: FontWeight.w900,
-                          height: 1.1,
+                          height: 1.08,
+                          letterSpacing: -0.5,
+                          shadows: [
+                            Shadow(color: Colors.black54, blurRadius: 12),
+                          ],
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 11),
                       Wrap(
-                        spacing: 8,
+                        spacing: 7,
                         runSpacing: 6,
                         children: [
                           if (anime.score.isNotEmpty)
@@ -752,24 +969,6 @@ class _AnimeScreenState extends State<AnimeScreen> {
                             ),
                         ],
                       ),
-                      const SizedBox(height: 10),
-                      const Row(
-                        children: [
-                          Icon(
-                            Icons.play_circle_fill_rounded,
-                            color: Colors.white,
-                            size: 19,
-                          ),
-                          SizedBox(width: 6),
-                          Text(
-                            'View details',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
                     ],
                   ),
                 ),
@@ -782,41 +981,48 @@ class _AnimeScreenState extends State<AnimeScreen> {
   }
 
   Widget _tabSelector() {
-    return Row(
-      children: [
-        Expanded(
-          child: _TabButton(
-            label: 'Discover',
-            icon: Icons.explore_outlined,
-            selected: _selectedTab == 0,
-            color: _purple,
-            onTap: () => setState(() => _selectedTab = 0),
+    return Container(
+      padding: const EdgeInsets.all(5),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _TabButton(
+              label: 'Discover',
+              icon: Icons.explore_rounded,
+              selected: _selectedTab == 0,
+              color: _purple,
+              onTap: () => setState(() => _selectedTab = 0),
+            ),
           ),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _TabButton(
-            label: 'Airing calendar',
-            icon: Icons.calendar_month,
-            selected: _selectedTab == 1,
-            color: _teal,
-            onTap: () => setState(() => _selectedTab = 1),
+          const SizedBox(width: 5),
+          Expanded(
+            child: _TabButton(
+              label: 'Airing calendar',
+              icon: Icons.calendar_month_rounded,
+              selected: _selectedTab == 1,
+              color: _teal,
+              onTap: () => setState(() => _selectedTab = 1),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
   Widget _discoverySelector() {
     return SizedBox(
-      height: 42,
+      height: 44,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: _discoveryCategories.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 7),
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
           final selected = _selectedDiscovery == index;
-
           return ChoiceChip(
             label: Text(_discoveryCategories[index]),
             selected: selected,
@@ -824,14 +1030,23 @@ class _AnimeScreenState extends State<AnimeScreen> {
               setState(() => _selectedDiscovery = index);
               if (index != 0) _loadDiscovery(index);
             },
-            selectedColor: _purple.withValues(alpha: 0.25),
+            selectedColor: _purple,
             backgroundColor: _surface,
+            showCheckmark: false,
             labelStyle: TextStyle(
-              color: selected ? _purple : Colors.white70,
-              fontWeight: FontWeight.w600,
+              color: selected ? Colors.white : Colors.white70,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+            padding: const EdgeInsets.symmetric(
+              horizontal: 9,
+              vertical: 7,
             ),
             side: BorderSide(
               color: selected ? _purple : Colors.white12,
+            ),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(13),
             ),
           );
         },
@@ -841,30 +1056,42 @@ class _AnimeScreenState extends State<AnimeScreen> {
 
   Widget _daySelector() {
     return SizedBox(
-      height: 42,
+      height: 48,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         itemCount: _days.length,
-        separatorBuilder: (_, _) => const SizedBox(width: 7),
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
           final day = _days[index];
           final selected = day == _selectedDay;
-
-          return ChoiceChip(
-            label: Text(day.substring(0, 3)),
-            selected: selected,
-            onSelected: (_) {
+          return InkWell(
+            borderRadius: BorderRadius.circular(14),
+            onTap: () {
               setState(() => _selectedDay = day);
               _loadSchedule(day);
             },
-            selectedColor: _teal.withValues(alpha: 0.25),
-            backgroundColor: _surface,
-            labelStyle: TextStyle(
-              color: selected ? _teal : Colors.white70,
-              fontWeight: FontWeight.w600,
-            ),
-            side: BorderSide(
-              color: selected ? _teal : Colors.white12,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              width: 48,
+              decoration: BoxDecoration(
+                color: selected
+                    ? _teal.withValues(alpha: 0.17)
+                    : _surface,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(
+                  color: selected ? _teal : Colors.white12,
+                  width: selected ? 1.3 : 1,
+                ),
+              ),
+              alignment: Alignment.center,
+              child: Text(
+                day.substring(0, 3),
+                style: TextStyle(
+                  color: selected ? _teal : Colors.white70,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
             ),
           );
         },
@@ -921,9 +1148,9 @@ class _AnimeGrid extends StatelessWidget {
       itemCount: items.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        crossAxisSpacing: 12,
+        crossAxisSpacing: 13,
         mainAxisSpacing: 16,
-        childAspectRatio: 0.66,
+        childAspectRatio: 0.68,
       ),
       itemBuilder: (context, index) {
         final anime = items[index];
@@ -959,128 +1186,189 @@ class _AnimeGridCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: _surface,
-      borderRadius: BorderRadius.circular(16),
+      borderRadius: BorderRadius.circular(19),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (anime.coverUrl.isNotEmpty)
-                    Image.network(
-                      anime.coverUrl,
-                      fit: BoxFit.cover,
-                      errorBuilder: (_, _, _) => const ColoredBox(
+        child: Container(
+          decoration: BoxDecoration(
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.07),
+            ),
+            borderRadius: BorderRadius.circular(19),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (anime.coverUrl.isNotEmpty)
+                      Image.network(
+                        anime.coverUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, _, _) => const ColoredBox(
+                          color: Color(0xFF292033),
+                          child: Icon(
+                            Icons.broken_image_outlined,
+                            color: Colors.white38,
+                            size: 32,
+                          ),
+                        ),
+                      )
+                    else
+                      const ColoredBox(
                         color: Color(0xFF292033),
                         child: Icon(
-                          Icons.broken_image_outlined,
-                          color: Colors.white54,
-                          size: 30,
+                          Icons.movie_outlined,
+                          color: Colors.white38,
+                          size: 32,
                         ),
                       ),
-                    )
-                  else
-                    const ColoredBox(
-                      color: Color(0xFF292033),
-                      child: Icon(
-                        Icons.movie_outlined,
-                        color: Colors.white54,
-                        size: 30,
-                      ),
-                    ),
-                  Positioned(
-                    top: 7,
-                    right: 7,
-                    child: Material(
-                      color: Colors.black.withValues(alpha: 0.65),
-                      shape: const CircleBorder(),
-                      child: IconButton(
-                        visualDensity: VisualDensity.compact,
-                        constraints: const BoxConstraints(
-                          minWidth: 34,
-                          minHeight: 34,
-                        ),
-                        padding: EdgeInsets.zero,
-                        tooltip: saved ? 'Saved' : 'Add to watchlist',
-                        onPressed: onBookmark,
-                        icon: Icon(
-                          saved
-                              ? Icons.bookmark_rounded
-                              : Icons.bookmark_border_rounded,
-                          color: saved ? _pink : Colors.white,
-                          size: 19,
+
+                    const DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Color(0x22000000),
+                            Colors.transparent,
+                            Color(0x33000000),
+                          ],
+                          stops: [0, 0.45, 1],
                         ),
                       ),
                     ),
-                  ),
-                ],
+
+                    if (anime.score.isNotEmpty)
+                      Positioned(
+                        top: 10,
+                        left: 10,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 9,
+                            vertical: 6,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xE6100D17),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: _orange.withValues(alpha: 0.35),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.star_rounded,
+                                color: _orange,
+                                size: 14,
+                              ),
+                              const SizedBox(width: 4),
+                              Text(
+                                anime.score,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                    Positioned(
+                      top: 7,
+                      right: 7,
+                      child: Material(
+                        color: const Color(0xD9100D17),
+                        shape: const CircleBorder(),
+                        child: IconButton(
+                          visualDensity: VisualDensity.compact,
+                          constraints: const BoxConstraints(
+                            minWidth: 38,
+                            minHeight: 38,
+                          ),
+                          padding: EdgeInsets.zero,
+                          tooltip: saved
+                              ? 'Remove from watchlist'
+                              : 'Add to watchlist',
+                          onPressed: onBookmark,
+                          icon: Icon(
+                            saved
+                                ? Icons.bookmark_rounded
+                                : Icons.bookmark_border_rounded,
+                            color: saved ? _pink : Colors.white,
+                            size: 20,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(9, 9, 7, 7),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    anime.name,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      height: 1.2,
-                    ),
-                  ),
-                  const SizedBox(height: 5),
-                  Row(
-                    children: [
-                      if (anime.score.isNotEmpty) ...[
-                        const Icon(
-                          Icons.star_rounded,
-                          color: _orange,
-                          size: 15,
-                        ),
-                        const SizedBox(width: 3),
-                        Expanded(
-                          child: Text(
-                            anime.score,
+
+              Padding(
+                padding: const EdgeInsets.fromLTRB(11, 10, 7, 7),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            anime.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                              height: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 5),
+                          Text(
+                            [
+                              anime.type,
+                              anime.year,
+                            ].where((value) => value.isNotEmpty).join(' • '),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              color: _orange,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
+                              color: Colors.white54,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
                             ),
                           ),
-                        ),
-                      ] else
-                        const Spacer(),
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        constraints: const BoxConstraints(
-                          minWidth: 30,
-                          minHeight: 30,
-                        ),
-                        padding: EdgeInsets.zero,
-                        tooltip: 'Share anime',
-                        onPressed: onShare,
-                        icon: const Icon(
-                          Icons.share_outlined,
-                          color: _blue,
-                          size: 17,
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
-                ],
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      constraints: const BoxConstraints(
+                        minWidth: 34,
+                        minHeight: 34,
+                      ),
+                      padding: EdgeInsets.zero,
+                      tooltip: 'Share anime',
+                      onPressed: onShare,
+                      icon: const Icon(
+                        Icons.share_outlined,
+                        color: _blue,
+                        size: 18,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -1106,90 +1394,138 @@ class _AnimeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
-      color: _surface,
-      margin: const EdgeInsets.only(bottom: 11),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Colors.white10),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
       ),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(16),
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.all(10),
-          child: Row(
-            children: [
-              _AnimePoster(anime: anime, width: 72, height: 94),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      anime.name,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                    ),
-                    const SizedBox(height: 6),
-                    Text(
-                      anime.genre,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: Colors.white60,
-                        fontSize: 11,
-                      ),
-                    ),
-                    const SizedBox(height: 7),
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 5,
-                      children: [
-                        if (anime.score.isNotEmpty)
-                          _InfoChip(
-                            icon: Icons.star_rounded,
-                            label: anime.score,
-                            color: _orange,
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(18),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.all(11),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: _AnimePoster(
+                    anime: anime,
+                    width: 76,
+                    height: 102,
+                  ),
+                ),
+                const SizedBox(width: 13),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (showBroadcast && anime.broadcastTime.isNotEmpty)
+                        Container(
+                          margin: const EdgeInsets.only(bottom: 7),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 5,
                           ),
-                        if (showBroadcast && anime.broadcastTime.isNotEmpty)
-                          _InfoChip(
-                            icon: Icons.schedule,
-                            label: anime.broadcastTime,
-                            color: _teal,
+                          decoration: BoxDecoration(
+                            color: _teal.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(7),
                           ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.schedule_rounded,
+                                color: _teal,
+                                size: 12,
+                              ),
+                              const SizedBox(width: 5),
+                              Flexible(
+                                child: Text(
+                                  anime.broadcastTime,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    color: _teal,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      Text(
+                        anime.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          height: 1.2,
+                        ),
+                      ),
+                      if (anime.genre.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          anime.genre,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 10,
+                            height: 1.3,
+                          ),
+                        ),
                       ],
+                      if (anime.score.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        _InfoChip(
+                          icon: Icons.star_rounded,
+                          label: anime.score,
+                          color: _orange,
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 3),
+                Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Share anime',
+                      onPressed: onShare,
+                      icon: const Icon(
+                        Icons.share_outlined,
+                        color: _blue,
+                        size: 19,
+                      ),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: saved ? 'Remove from watchlist' : 'Add to watchlist',
+                      onPressed: onBookmark,
+                      icon: Icon(
+                        saved
+                            ? Icons.bookmark_rounded
+                            : Icons.bookmark_border_rounded,
+                        color: saved ? _pink : Colors.white70,
+                        size: 21,
+                      ),
                     ),
                   ],
                 ),
-              ),
-              Column(
-                children: [
-                  IconButton(
-                    tooltip: 'Share anime',
-                    onPressed: onShare,
-                    icon: const Icon(
-                      Icons.share_outlined,
-                      color: _blue,
-                      size: 21,
-                    ),
-                  ),
-                  IconButton(
-                    tooltip: saved ? 'Saved' : 'Add to watchlist',
-                    onPressed: onBookmark,
-                    icon: Icon(
-                      saved ? Icons.bookmark : Icons.bookmark_border,
-                      color: saved ? _pink : Colors.white70,
-                    ),
-                  ),
-                ],
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -1336,27 +1672,42 @@ class _EmptyPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(22),
+      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 26),
       decoration: BoxDecoration(
         color: _surface,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(19),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.07)),
       ),
       child: Column(
         children: [
-          Icon(icon, color: _purple, size: 30),
-          const SizedBox(height: 10),
+          Container(
+            width: 58,
+            height: 58,
+            decoration: BoxDecoration(
+              color: _purple.withValues(alpha: 0.13),
+              borderRadius: BorderRadius.circular(18),
+            ),
+            child: Icon(icon, color: _purple, size: 28),
+          ),
+          const SizedBox(height: 14),
           Text(
             title,
+            textAlign: TextAlign.center,
             style: const TextStyle(
               color: Colors.white,
-              fontWeight: FontWeight.bold,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
             ),
           ),
-          const SizedBox(height: 5),
+          const SizedBox(height: 6),
           Text(
             message,
             textAlign: TextAlign.center,
-            style: const TextStyle(color: Colors.white60, fontSize: 12),
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 12,
+              height: 1.45,
+            ),
           ),
         ],
       ),
@@ -1376,24 +1727,68 @@ class _ErrorPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(16),
+      width: double.infinity,
+      padding: const EdgeInsets.all(17),
       decoration: BoxDecoration(
         color: _surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+        borderRadius: BorderRadius.circular(17),
+        border: Border.all(
+          color: _orange.withValues(alpha: 0.25),
+        ),
       ),
       child: Column(
         children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: _orange.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.wifi_off_rounded,
+              color: _orange,
+              size: 22,
+            ),
+          ),
+          const SizedBox(height: 11),
+          const Text(
+            'Something went wrong',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 6),
           Text(
             message,
-            style: const TextStyle(color: Colors.white70),
             textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Colors.white60,
+              fontSize: 12,
+              height: 1.4,
+            ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           TextButton.icon(
             onPressed: onRetry,
-            icon: const Icon(Icons.refresh),
-            label: const Text('Try again'),
+            style: TextButton.styleFrom(
+              foregroundColor: _purple,
+              backgroundColor: _purple.withValues(alpha: 0.12),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 15,
+                vertical: 9,
+              ),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(11),
+              ),
+            ),
+            icon: const Icon(Icons.refresh_rounded, size: 17),
+            label: const Text(
+              'Try again',
+              style: TextStyle(fontWeight: FontWeight.w700),
+            ),
           ),
         ],
       ),

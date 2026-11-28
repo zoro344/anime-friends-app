@@ -29,6 +29,8 @@ class AppState extends ChangeNotifier {
   Future<void>? _fcmRegistrationTask;
   String _registeredFcmToken = '';
   int _newsRequestGeneration = 0;
+  int _notificationNewsRequestGeneration = 0;
+  int _notificationRequestGeneration = 0;
   socket_io.Socket? _socket;
   dynamic _socialChannel;
   String _socialRealtimeUserId = '';
@@ -102,8 +104,26 @@ class AppState extends ChangeNotifier {
   String friendError = '';
   final List<Map<String, dynamic>> _newsItems = [];
   final List<Map<String, dynamic>> _notifications = [];
-  List<Map<String, dynamic>> get notifications => List.unmodifiable(_notifications);
-  int get unreadNotificationCount => _notifications.where((item) => item['readAt'] == null).length;
+  List<Map<String, dynamic>> get notifications =>
+      List.unmodifiable(_notifications);
+
+  bool notificationsLoading = false;
+  String notificationError = '';
+
+  int get unreadNotificationCount => _notifications.where((item) {
+        final type = item['type'];
+        return (type == 'friend_request' || type == 'friend_accepted') &&
+            item['readAt'] == null;
+      }).length;
+
+  bool newsLoading = false;
+
+  final List<Map<String, dynamic>> _notificationNewsItems = [];
+  List<Map<String, dynamic>> get notificationNewsItems =>
+      List.unmodifiable(_notificationNewsItems);
+
+  bool notificationNewsLoading = false;
+  String notificationNewsError = '';
 
   int get unreadMessageCount =>
       _conversations.fold(0, (total, chat) => total + chat.unreadCount);
@@ -1252,6 +1272,11 @@ class AppState extends ChangeNotifier {
   Future<void> loadNotifications() async {
     if (!SupabaseService.isInitialized || userId.isEmpty) return;
 
+    final requestId = ++_notificationRequestGeneration;
+    notificationsLoading = true;
+    notificationError = '';
+    notifyListeners();
+
     try {
       final response = await SupabaseService.client
           .from('notifications')
@@ -1260,8 +1285,11 @@ class AppState extends ChangeNotifier {
             'actor:profiles!notifications_actor_id_fkey(username)',
           )
           .eq('user_id', userId)
+          .inFilter('type', ['friend_request', 'friend_accepted'])
           .order('created_at', ascending: false)
           .limit(100);
+
+      if (requestId != _notificationRequestGeneration) return;
 
       _notifications
         ..clear()
@@ -1281,10 +1309,17 @@ class AppState extends ChangeNotifier {
           };
         }));
     } catch (error) {
-      debugPrint('Could not load notifications: $error');
+      if (requestId == _notificationRequestGeneration) {
+        notificationError =
+            'Could not load friend activity. Check your connection and retry.';
+        debugPrint('Could not load notifications: $error');
+      }
+    } finally {
+      if (requestId == _notificationRequestGeneration) {
+        notificationsLoading = false;
+        notifyListeners();
+      }
     }
-
-    notifyListeners();
   }
 
   Future<void> markNotificationsRead() async {
@@ -1297,10 +1332,14 @@ class AppState extends ChangeNotifier {
           .from('notifications')
           .update({'read_at': readAt})
           .eq('user_id', userId)
-          .isFilter('read_at', null);
+          .isFilter('read_at', null)
+          .inFilter('type', ['friend_request', 'friend_accepted']);
 
       for (final item in _notifications) {
-        item['readAt'] ??= readAt;
+        if (item['type'] == 'friend_request' ||
+            item['type'] == 'friend_accepted') {
+          item['readAt'] ??= readAt;
+        }
       }
     } catch (error) {
       debugPrint('Could not mark notifications read: $error');
@@ -1311,6 +1350,9 @@ class AppState extends ChangeNotifier {
 
   Future<void> loadNews({String query = '', String category = ''}) async {
     final requestId = ++_newsRequestGeneration;
+    newsLoading = true;
+    newsError = '';
+    notifyListeners();
 
     try {
       final articles = await _newsService.getNews(
@@ -1323,14 +1365,46 @@ class AppState extends ChangeNotifier {
       _newsItems
         ..clear()
         ..addAll(articles);
-      newsError = '';
-    } catch (_) {
-      if (requestId != _newsRequestGeneration) return;
-      newsError =
-          'Could not load anime news. Check your internet connection and retry.';
+    } catch (error) {
+      if (requestId == _newsRequestGeneration) {
+        newsError =
+            'Could not load anime news. Check your internet connection and retry.';
+        debugPrint('Could not load anime news: $error');
+      }
+    } finally {
+      if (requestId == _newsRequestGeneration) {
+        newsLoading = false;
+        notifyListeners();
+      }
     }
+  }
 
+  Future<void> loadNotificationNews() async {
+    final requestId = ++_notificationNewsRequestGeneration;
+    notificationNewsLoading = true;
+    notificationNewsError = '';
     notifyListeners();
+
+    try {
+      final articles = await _newsService.getNews();
+
+      if (requestId != _notificationNewsRequestGeneration) return;
+
+      _notificationNewsItems
+        ..clear()
+        ..addAll(articles);
+    } catch (error) {
+      if (requestId == _notificationNewsRequestGeneration) {
+        notificationNewsError =
+            'Could not load anime news. Check your internet connection and retry.';
+        debugPrint('Could not load notification news: $error');
+      }
+    } finally {
+      if (requestId == _notificationNewsRequestGeneration) {
+        notificationNewsLoading = false;
+        notifyListeners();
+      }
+    }
   }
 
   Future<void> createPost(String text) async {
@@ -1533,40 +1607,78 @@ class AppState extends ChangeNotifier {
     }
   }
 
-  Future<void> editComment(
-    String commentId, String postId, String content,
+  Future<bool> editComment(
+    String commentId,
+    String postId,
+    String content,
   ) async {
     final value = content.trim();
-    if (value.isEmpty || value.length > 1500) return;
-    if (!isAuthenticated || !SupabaseService.isInitialized) return;
+
+    if (value.isEmpty || value.length > 1500) {
+      commentError = 'Comments must be between 1 and 1500 characters.';
+      notifyListeners();
+      return false;
+    }
+
+    if (!isAuthenticated || !SupabaseService.isInitialized) {
+      commentError = 'Please sign in to edit comments.';
+      notifyListeners();
+      return false;
+    }
 
     try {
-      await SupabaseService.client
+      final response = await SupabaseService.client
           .from('post_comments')
           .update({'content': value})
           .eq('id', commentId)
-          .eq('user_id', userId);
+          .eq('user_id', userId)
+          .select('id');
+
+      if (response.isEmpty) {
+        commentError = 'Comment could not be edited. It may no longer exist.';
+        notifyListeners();
+        return false;
+      }
+
+      commentError = '';
       await loadComments(postId);
+      return true;
     } catch (_) {
       commentError = 'Could not edit your comment. Please try again.';
       notifyListeners();
+      return false;
     }
   }
 
-  Future<void> deleteComment(String commentId, String postId) async {
-    if (!isAuthenticated || !SupabaseService.isInitialized) return;
+  Future<bool> deleteComment(String commentId, String postId) async {
+    if (!isAuthenticated || !SupabaseService.isInitialized) {
+      commentError = 'Please sign in to delete comments.';
+      notifyListeners();
+      return false;
+    }
 
     try {
-      await SupabaseService.client
+      final response = await SupabaseService.client
           .from('post_comments')
           .delete()
           .eq('id', commentId)
-          .eq('user_id', userId);
+          .eq('user_id', userId)
+          .select('id');
+
+      if (response.isEmpty) {
+        commentError = 'Comment could not be deleted. It may no longer exist.';
+        notifyListeners();
+        return false;
+      }
+
+      commentError = '';
       await loadComments(postId);
       await loadFeed();
+      return true;
     } catch (_) {
       commentError = 'Could not delete your comment. Please try again.';
       notifyListeners();
+      return false;
     }
   }
 
@@ -2366,7 +2478,18 @@ class AppState extends ChangeNotifier {
     _friends.clear();
     _friendRequests.clear();
     _newsItems.clear();
+
+    // Invalidate pending notification requests before clearing account state.
+    _notificationRequestGeneration++;
+    notificationsLoading = false;
+    notificationError = '';
     _notifications.clear();
+
+    _notificationNewsRequestGeneration++;
+    _notificationNewsItems.clear();
+    notificationNewsLoading = false;
+    notificationNewsError = '';
+
     notifyListeners();
   }
 

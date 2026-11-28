@@ -15,142 +15,330 @@ class ProfileScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final appState = AppStateScope.of(context);
+    final displayName = appState.displayName.trim().isEmpty
+        ? appState.username
+        : appState.displayName.trim();
 
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 30),
       children: [
-        const SizedBox(height: 15),
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'YOUR SPACE',
+                    style: AppTypography.label.copyWith(
+                      color: AppColors.primary,
+                      letterSpacing: 2.2,
+                    ),
+                  ),
+                  const SizedBox(height: 5),
+                  Text(
+                    'Profile',
+                    style: AppTypography.headingLarge,
+                  ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Edit profile',
+              onPressed: () => _editProfile(context, appState),
+              icon: const Icon(
+                Icons.edit_outlined,
+                color: AppColors.textPrimary,
+              ),
+              style: IconButton.styleFrom(
+                backgroundColor: AppColors.surface,
+                side: const BorderSide(color: AppColors.border),
+                padding: const EdgeInsets.all(12),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 20),
+
+        _buildProfileHeader(
+          displayName: displayName,
+          username: appState.username,
+          handle: appState.handle,
+          bio: appState.bio,
+          avatarUrl: appState.avatarUrl,
+        ),
+
+        const SizedBox(height: 16),
+
+        _buildStats(
+          posts: appState.postCount,
+          friends: appState.friendCount,
+          anime: appState.animeCount,
+        ),
+
+        const SizedBox(height: 28),
+
+        const SectionTitle(title: 'Your collection'),
+        const SizedBox(height: 10),
+        _buildLibraryCard(context),
+
+        const SizedBox(height: 26),
+
+        const SectionTitle(title: 'Account'),
+        const SizedBox(height: 10),
+
+        _ProfileActionTile(
+          icon: Icons.person_outline_rounded,
+          title: 'Edit profile',
+          subtitle: 'Update your username, name and bio',
+          onTap: () => _editProfile(context, appState),
+        ),
+        const SizedBox(height: 9),
+        _ProfileActionTile(
+          icon: Icons.people_outline_rounded,
+          title: 'Friends',
+          subtitle: 'View your connections',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => const FriendsScreen(),
+            ),
+          ),
+        ),
+        const SizedBox(height: 9),
+        _ProfileActionTile(
+          icon: Icons.logout_rounded,
+          title: 'Sign out',
+          subtitle: 'Sign out of your Anime Friends account',
+          iconColor: AppColors.error,
+          onTap: () => _confirmSignOut(context, appState),
+        ),
+
+        const SizedBox(height: 30),
+
         Center(
           child: Column(
             children: [
-              AFAvatar(label: appState.username, radius: 50),
-              const SizedBox(height: 15),
+              Icon(
+                Icons.auto_awesome_rounded,
+                color: AppColors.primary.withValues(alpha: 0.8),
+                size: 21,
+              ),
+              const SizedBox(height: 8),
               Text(
-                appState.displayName.trim().isEmpty
-                    ? appState.username
-                    : appState.displayName,
-                style: AppTypography.headingMedium.copyWith(
-                  color: AppColors.textPrimary,
+                'ANIME FRIENDS',
+                style: AppTypography.label.copyWith(
+                  color: AppColors.textSecondary,
+                  letterSpacing: 3,
                 ),
               ),
-              const SizedBox(height: 5),
+              const SizedBox(height: 4),
               Text(
-                appState.handle,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(height: 15),
-              Text(
-                appState.bio,
-                textAlign: TextAlign.center,
-                style: AppTypography.bodyMedium.copyWith(
-                  color: AppColors.textSecondary,
-                  height: 1.5,
+                'Your anime community',
+                style: AppTypography.bodySmall.copyWith(
+                  color: AppColors.textDisabled,
                 ),
               ),
             ],
           ),
         ),
-        const SizedBox(height: 25),
-        Row(
-          children: [
-            Expanded(child: _stat('${appState.postCount}', 'Posts')),
-            Expanded(child: _stat('${appState.friendCount}', 'Friends')),
-            Expanded(child: _stat('${appState.animeCount}', 'Anime')),
+      ],
+    );
+  }
+
+  Widget _buildProfileHeader({
+    required String displayName,
+    required String username,
+    required String handle,
+    required String bio,
+    required String? avatarUrl,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.surfaceElevated,
+            AppColors.surface,
           ],
         ),
-        const SizedBox(height: 25),
-        const SectionTitle(title: 'Library'),
-        _profileTile(
-          Icons.library_books_outlined,
-          'Anime & Manga Library',
-          () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => const LibraryScreen(),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Column(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.75),
+                width: 2,
+              ),
+            ),
+            child: AFAvatar(
+              imageUrl: avatarUrl,
+              label: username,
+              radius: 43,
             ),
           ),
-        ),
-        const SizedBox(height: 12),
-        const SectionTitle(title: 'Account'),
-        _profileTile(
-          Icons.person_outline,
-          'Edit Profile',
-          () => _editProfile(context, appState),
-        ),
-        _profileTile(
-          Icons.logout,
-          'Sign out',
-          () => _confirmSignOut(context, appState),
-        ),
-        _profileTile(
-          Icons.people_outline,
-          'Friends',
-          () => Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => const FriendsScreen()),
+          const SizedBox(height: 15),
+          Text(
+            displayName,
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: AppTypography.headingMedium,
           ),
-        ),
-        _profileTile(
-          Icons.settings_outlined,
-          'Settings',
-          () => _showMessage(context, 'Settings'),
-        ),
-        const SizedBox(height: 20),
-        Center(
-          child: Text(
-            'ANIME FRIENDS',
-            style: AppTypography.label.copyWith(
-              color: AppColors.textSecondary,
-              letterSpacing: 4,
-              fontWeight: FontWeight.bold,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _stat(String number, String label) {
-    return Column(
-      children: [
-        Text(
-          number,
-          style: AppTypography.headingMedium.copyWith(
-            color: AppColors.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          label,
-          style: AppTypography.bodySmall.copyWith(
-            color: AppColors.textSecondary,
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _profileTile(
-    IconData icon,
-    String title,
-    VoidCallback onTap,
-  ) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 9),
-      child: AFCard(
-        padding: EdgeInsets.zero,
-        child: ListTile(
-          onTap: onTap,
-          leading: Icon(icon, color: AppColors.iconMuted),
-          title: Text(
-            title,
+          const SizedBox(height: 5),
+          Text(
+            handle,
             style: AppTypography.bodyMedium.copyWith(
-              color: AppColors.textPrimary,
+              color: AppColors.primary,
+              fontWeight: FontWeight.w600,
             ),
           ),
-          trailing: const Icon(
-            Icons.chevron_right,
-            color: AppColors.iconMuted,
+          if (bio.trim().isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Container(
+              width: 42,
+              height: 2,
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              bio.trim(),
+              textAlign: TextAlign.center,
+              style: AppTypography.bodyMedium.copyWith(
+                color: AppColors.textSecondary,
+                height: 1.6,
+              ),
+            ),
+          ],
+          const SizedBox(height: 15),
+          Container(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 12,
+              vertical: 7,
+            ),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(30),
+              border: Border.all(
+                color: AppColors.primary.withValues(alpha: 0.25),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.verified_user_outlined,
+                  size: 14,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  'ANIME FRIENDS MEMBER',
+                  style: AppTypography.label.copyWith(
+                    color: AppColors.primary,
+                    fontSize: 10,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStats({
+    required int posts,
+    required int friends,
+    required int anime,
+  }) {
+    return AFCard(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 8,
+        vertical: 17,
+      ),
+      child: Row(
+        children: [
+          Expanded(child: _ProfileStat(value: posts, label: 'Posts')),
+          _statDivider(),
+          Expanded(child: _ProfileStat(value: friends, label: 'Friends')),
+          _statDivider(),
+          Expanded(child: _ProfileStat(value: anime, label: 'Anime')),
+        ],
+      ),
+    );
+  }
+
+  Widget _statDivider() {
+    return Container(
+      height: 35,
+      width: 1,
+      color: AppColors.divider,
+    );
+  }
+
+  Widget _buildLibraryCard(BuildContext context) {
+    return AFCard(
+      padding: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(16),
+        onTap: () => Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => const LibraryScreen(),
+          ),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.13),
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: const Icon(
+                  Icons.collections_bookmark_outlined,
+                  color: AppColors.primary,
+                  size: 24,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Anime & Manga Library',
+                      style: AppTypography.bodyLarge.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Explore your saved collection',
+                      style: AppTypography.bodySmall,
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.arrow_forward_ios_rounded,
+                size: 16,
+                color: AppColors.iconMuted,
+              ),
+            ],
           ),
         ),
       ),
@@ -164,13 +352,24 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  Future<void> _confirmSignOut(BuildContext context, dynamic appState) async {
+  Future<void> _confirmSignOut(
+    BuildContext context,
+    dynamic appState,
+  ) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         backgroundColor: AppColors.surfaceElevated,
-        title: const Text('Sign out?'),
-        content: const Text('You can sign in again with your account.'),
+        title: Text(
+          'Sign out?',
+          style: AppTypography.headingSmall,
+        ),
+        content: Text(
+          'You can sign in again with your account.',
+          style: AppTypography.bodyMedium.copyWith(
+            color: AppColors.textSecondary,
+          ),
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),
@@ -178,17 +377,108 @@ class ProfileScreen extends StatelessWidget {
           ),
           FilledButton(
             onPressed: () => Navigator.pop(dialogContext, true),
+            style: FilledButton.styleFrom(
+              backgroundColor: AppColors.error,
+            ),
             child: const Text('Sign out'),
           ),
         ],
       ),
     );
-    if (confirmed == true) await appState.signOut();
-  }
 
-  void _showMessage(BuildContext context, String title) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('$title will be implemented next.')),
+    if (confirmed == true) {
+      await appState.signOut();
+    }
+  }
+}
+
+class _ProfileStat extends StatelessWidget {
+  const _ProfileStat({
+    required this.value,
+    required this.label,
+  });
+
+  final int value;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(
+          '$value',
+          style: AppTypography.headingMedium.copyWith(
+            fontSize: 22,
+          ),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          label,
+          style: AppTypography.bodySmall.copyWith(
+            color: AppColors.textSecondary,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ProfileActionTile extends StatelessWidget {
+  const _ProfileActionTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.onTap,
+    this.iconColor,
+  });
+
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  final Color? iconColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final color = iconColor ?? AppColors.iconMuted;
+
+    return AFCard(
+      padding: EdgeInsets.zero,
+      child: ListTile(
+        onTap: onTap,
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 15,
+          vertical: 5,
+        ),
+        leading: Container(
+          width: 42,
+          height: 42,
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.11),
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Icon(icon, color: color, size: 21),
+        ),
+        title: Text(
+          title,
+          style: AppTypography.bodyMedium.copyWith(
+            color: title == 'Sign out'
+                ? AppColors.error
+                : AppColors.textPrimary,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        subtitle: Text(
+          subtitle,
+          style: AppTypography.bodySmall.copyWith(
+            fontSize: 11,
+          ),
+        ),
+        trailing: const Icon(
+          Icons.chevron_right_rounded,
+          color: AppColors.iconMuted,
+        ),
+      ),
     );
   }
 }
@@ -207,9 +497,12 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
   late final TextEditingController displayNameController;
   late final TextEditingController bioController;
 
+  bool _isSaving = false;
+
   @override
   void initState() {
     super.initState();
+
     nameController = TextEditingController(
       text: widget.appState.username,
     );
@@ -220,8 +513,6 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
       text: widget.appState.bio,
     );
   }
-
-  bool _isSaving = false;
 
   Future<void> _saveProfile() async {
     if (_isSaving) return;
@@ -240,10 +531,13 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
 
     if (!success) {
       final message = widget.appState.authError as String;
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            message.isEmpty ? 'Could not update your profile.' : message,
+            message.isEmpty
+                ? 'Could not update your profile.'
+                : message,
           ),
         ),
       );
@@ -254,7 +548,9 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
     Navigator.of(context).pop();
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Profile updated successfully.')),
+      const SnackBar(
+        content: Text('Profile updated successfully.'),
+      ),
     );
   }
 
@@ -273,9 +569,7 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
       scrollable: true,
       title: Text(
         'Edit Profile',
-        style: AppTypography.headingSmall.copyWith(
-          color: AppColors.textPrimary,
-        ),
+        style: AppTypography.headingSmall,
       ),
       content: Column(
         mainAxisSize: MainAxisSize.min,
@@ -283,14 +577,20 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
           TextField(
             controller: nameController,
             maxLength: 24,
-            style: const TextStyle(color: AppColors.textPrimary),
-            decoration: const InputDecoration(labelText: 'Username'),
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+            ),
+            decoration: const InputDecoration(
+              labelText: 'Username',
+            ),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: displayNameController,
             maxLength: 40,
-            style: const TextStyle(color: AppColors.textPrimary),
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+            ),
             decoration: const InputDecoration(
               labelText: 'Display name (optional)',
             ),
@@ -300,17 +600,23 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
             controller: bioController,
             maxLength: 150,
             maxLines: 2,
-            style: const TextStyle(color: AppColors.textPrimary),
-            decoration: const InputDecoration(labelText: 'Bio'),
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+            ),
+            decoration: const InputDecoration(
+              labelText: 'Bio',
+            ),
           ),
         ],
       ),
       actions: [
         TextButton(
-          onPressed: () {
-            FocusScope.of(context).unfocus();
-            Navigator.of(context).pop();
-          },
+          onPressed: _isSaving
+              ? null
+              : () {
+                  FocusScope.of(context).unfocus();
+                  Navigator.of(context).pop();
+                },
           child: const Text('Cancel'),
         ),
         FilledButton(
@@ -319,7 +625,9 @@ class _EditProfileDialogState extends State<_EditProfileDialog> {
               ? const SizedBox(
                   width: 18,
                   height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2),
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                  ),
                 )
               : const Text('Save'),
         ),

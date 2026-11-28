@@ -559,84 +559,281 @@ class _LibraryScreenState extends State<LibraryScreen>
     );
   }
 
+
+  Color _statusColor(String status) {
+    switch (status) {
+      case 'watching':
+      case 'reading':
+        return const Color(0xFF65D6A3);
+      case 'completed':
+        return const Color(0xFF9B6DFF);
+      case 'on_hold':
+        return const Color(0xFFFFC66D);
+      case 'dropped':
+        return const Color(0xFFFF7777);
+      default:
+        return const Color(0xFF83B8FF);
+    }
+  }
+
+  Widget _libraryError(String message) {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.redAccent.withOpacity(0.10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.redAccent.withOpacity(0.25),
+        ),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.error_outline,
+            color: Colors.redAccent,
+            size: 19,
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _libraryHeader(int animeCount, int mangaCount) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(18, 20, 18, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Your Library',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 25,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 5),
+          const Text(
+            'Keep track of your anime and manga journey.',
+            style: TextStyle(
+              color: Colors.white54,
+              fontSize: 12,
+            ),
+          ),
+          const SizedBox(height: 17),
+          Row(
+            children: [
+              Expanded(
+                child: _libraryCountCard(
+                  icon: Icons.movie_outlined,
+                  label: 'ANIME',
+                  count: animeCount,
+                ),
+              ),
+              const SizedBox(width: 11),
+              Expanded(
+                child: _libraryCountCard(
+                  icon: Icons.menu_book_outlined,
+                  label: 'MANGA',
+                  count: mangaCount,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _libraryCountCard({
+    required IconData icon,
+    required String label,
+    required int count,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(
+        horizontal: 13,
+        vertical: 13,
+      ),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.07),
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: _purple, size: 21),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$count',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white54,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _animeList(AppState state) {
     final entries = state.animeLibraryEntries;
+    final error = state.animeError;
 
     if (entries.isEmpty) {
-      return _empty(
-        'Your anime library is empty',
-        'Add anime from Discover Anime to track your watching progress.',
+      return Column(
+        children: [
+          if (error.isNotEmpty) _libraryError(error),
+          Expanded(
+            child: _empty(
+              'Your anime library is empty',
+              'Add anime from Discover Anime to track your watching progress.',
+            ),
+          ),
+        ],
       );
     }
 
-    return ListView.separated(
-      padding: const EdgeInsets.all(14),
-      itemCount: entries.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        final entry = entries[index];
-        final watched = _number(entry['episodes_watched']);
-        final total = entry['total_episodes'] == null
-            ? null
-            : _number(entry['total_episodes']);
-        final status = '${entry['status'] ?? 'plan_to_watch'}';
+    return Column(
+      children: [
+        if (error.isNotEmpty) _libraryError(error),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.all(14),
+            itemCount: entries.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 11),
+            itemBuilder: (context, index) {
+              final entry = entries[index];
+              final watched = _number(entry['episodes_watched']);
+              final total = entry['total_episodes'] == null
+                  ? null
+                  : _number(entry['total_episodes']);
+              final status = '${entry['status'] ?? 'plan_to_watch'}';
 
-        return _entryCard(
-          title: '${entry['anime_title'] ?? 'Untitled anime'}',
-          image: entry['cover_url']?.toString(),
-          status: status,
-          progress: total == null
-              ? '$watched episodes watched'
-              : '$watched / $total episodes',
-          onEdit: () => _editAnime(state, entry),
-          onRemove: () => _removeAnime(state, entry),
-          onProgress: () {
-            state.markNextEpisodeWatched('${entry['anime_id'] ?? ''}');
-          },
-        );
-      },
+              final progressValue = total != null && total > 0
+                  ? (watched / total).clamp(0.0, 1.0).toDouble()
+                  : null;
+
+              return _entryCard(
+                title: '${entry['anime_title'] ?? 'Untitled anime'}',
+                image: entry['cover_url']?.toString(),
+                status: status,
+                progress: total == null
+                    ? '$watched episodes watched'
+                    : '$watched / $total episodes',
+                progressValue: progressValue,
+                progressAction: 'Episode',
+                progressEnabled: total == null || watched < total,
+                onEdit: () => _editAnime(state, entry),
+                onRemove: () => _removeAnime(state, entry),
+                onProgress: () {
+                  state.markNextEpisodeWatched(
+                    '${entry['anime_id'] ?? ''}',
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
   Widget _mangaList(AppState state) {
     final entries = state.mangaLibraryEntries;
+    final error = state.mangaError;
 
     if (entries.isEmpty) {
-      return _empty(
-        'Your manga library is empty',
-        'Find manga in the Manga section and add it to your library.',
+      return Column(
+        children: [
+          if (error.isNotEmpty) _libraryError(error),
+          Expanded(
+            child: _empty(
+              'Your manga library is empty',
+              'Find manga in the Manga section and add it to your library.',
+            ),
+          ),
+        ],
       );
     }
 
-    return ListView.separated(
-      padding: const EdgeInsets.all(14),
-      itemCount: entries.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
-      itemBuilder: (context, index) {
-        final entry = entries[index];
-        final chapters = _number(entry['chapters_read']);
-        final total = entry['total_chapters'] == null
-            ? null
-            : _number(entry['total_chapters']);
-        final volumes = _number(entry['volumes_read']);
-        final status = '${entry['status'] ?? 'plan_to_read'}';
+    return Column(
+      children: [
+        if (error.isNotEmpty) _libraryError(error),
+        Expanded(
+          child: ListView.separated(
+            padding: const EdgeInsets.all(14),
+            itemCount: entries.length,
+            separatorBuilder: (_, __) => const SizedBox(height: 11),
+            itemBuilder: (context, index) {
+              final entry = entries[index];
+              final chapters = _number(entry['chapters_read']);
+              final total = entry['total_chapters'] == null
+                  ? null
+                  : _number(entry['total_chapters']);
+              final volumes = _number(entry['volumes_read']);
+              final status = '${entry['status'] ?? 'plan_to_read'}';
 
-        final progress = total == null
-            ? '$chapters chapters · $volumes volumes'
-            : '$chapters / $total chapters · $volumes volumes';
+              final progressValue = total != null && total > 0
+                  ? (chapters / total).clamp(0.0, 1.0).toDouble()
+                  : null;
 
-        return _entryCard(
-          title: '${entry['manga_title'] ?? 'Untitled manga'}',
-          image: entry['cover_url']?.toString(),
-          status: status,
-          progress: progress,
-          onEdit: () => _editManga(state, entry),
-          onRemove: () => _removeManga(state, entry),
-          onProgress: () {
-            state.markNextChapterRead('${entry['manga_id'] ?? ''}');
-          },
-        );
-      },
+              final progress = total == null
+                  ? '$chapters chapters · $volumes volumes'
+                  : '$chapters / $total chapters · $volumes volumes';
+
+              return _entryCard(
+                title: '${entry['manga_title'] ?? 'Untitled manga'}',
+                image: entry['cover_url']?.toString(),
+                status: status,
+                progress: progress,
+                progressValue: progressValue,
+                progressAction: 'Chapter',
+                progressEnabled: total == null || chapters < total,
+                onEdit: () => _editManga(state, entry),
+                onRemove: () => _removeManga(state, entry),
+                onProgress: () {
+                  state.markNextChapterRead(
+                    '${entry['manga_id'] ?? ''}',
+                  );
+                },
+              );
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -645,20 +842,31 @@ class _LibraryScreenState extends State<LibraryScreen>
     required String? image,
     required String status,
     required String progress,
+    required double? progressValue,
+    required String progressAction,
+    required bool progressEnabled,
     required VoidCallback onEdit,
     required VoidCallback onRemove,
     required VoidCallback onProgress,
   }) {
+    final color = _statusColor(status);
+
     return Container(
       padding: const EdgeInsets.all(11),
       decoration: BoxDecoration(
         color: _surface,
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: Colors.white.withOpacity(0.06)),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.07),
+        ),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          _poster(image),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(9),
+            child: _poster(image),
+          ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -671,63 +879,106 @@ class _LibraryScreenState extends State<LibraryScreen>
                   style: const TextStyle(
                     color: Colors.white,
                     fontWeight: FontWeight.w700,
+                    fontSize: 13,
+                    height: 1.3,
                   ),
                 ),
-                const SizedBox(height: 7),
+                const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(
                     horizontal: 9,
                     vertical: 4,
                   ),
                   decoration: BoxDecoration(
-                    color: _purple.withOpacity(0.16),
+                    color: color.withOpacity(0.13),
                     borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
                     _prettyStatus(status),
-                    style: const TextStyle(
-                      color: _purple,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
+                    style: TextStyle(
+                      color: color,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
-                const SizedBox(height: 7),
+                const SizedBox(height: 9),
                 Text(
                   progress,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: Colors.white60,
-                    fontSize: 12,
+                    color: Colors.white70,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
                   ),
                 ),
+                if (progressValue != null) ...[
+                  const SizedBox(height: 7),
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(10),
+                    child: LinearProgressIndicator(
+                      value: progressValue,
+                      minHeight: 5,
+                      backgroundColor: Colors.white.withOpacity(0.08),
+                      valueColor: AlwaysStoppedAnimation<Color>(color),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
-          IconButton(
-            tooltip: 'Mark next episode/chapter',
-            onPressed: onProgress,
-            icon: const Icon(
-              Icons.add_circle_outline,
-              color: _purple,
-            ),
-          ),
-          PopupMenuButton<String>(
-            tooltip: 'Library actions',
-            onSelected: (value) {
-              if (value == 'edit') onEdit();
-              if (value == 'remove') onRemove();
-            },
-            itemBuilder: (_) => const [
-              PopupMenuItem(
-                value: 'edit',
-                child: Text('Edit progress'),
+          const SizedBox(width: 5),
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: progressEnabled
+                    ? 'Mark next $progressAction'
+                    : 'Progress complete',
+                onPressed: progressEnabled ? onProgress : null,
+                visualDensity: VisualDensity.compact,
+                icon: Icon(
+                  Icons.add_circle,
+                  color: progressEnabled ? _purple : Colors.white24,
+                  size: 27,
+                ),
               ),
-              PopupMenuItem(
-                value: 'remove',
-                child: Text('Remove'),
+              PopupMenuButton<String>(
+                tooltip: 'Library actions',
+                onSelected: (value) {
+                  if (value == 'edit') onEdit();
+                  if (value == 'remove') onRemove();
+                },
+                itemBuilder: (_) => const [
+                  PopupMenuItem(
+                    value: 'edit',
+                    child: Row(
+                      children: [
+                        Icon(Icons.edit_outlined, size: 18),
+                        SizedBox(width: 10),
+                        Text('Edit progress'),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'remove',
+                    child: Row(
+                      children: [
+                        Icon(Icons.delete_outline, size: 18),
+                        SizedBox(width: 10),
+                        Text('Remove'),
+                      ],
+                    ),
+                  ),
+                ],
+                icon: const Icon(
+                  Icons.more_vert,
+                  color: Colors.white70,
+                  size: 21,
+                ),
               ),
             ],
-            icon: const Icon(Icons.more_vert, color: Colors.white70),
           ),
         ],
       ),
@@ -740,38 +991,52 @@ class _LibraryScreenState extends State<LibraryScreen>
 
     return AnimatedBuilder(
       animation: state,
-      builder: (context, _) => Column(
-        children: [
-          Container(
-            color: _surface,
-            child: TabBar(
-              controller: _tabs,
-              indicatorColor: _purple,
-              labelColor: Colors.white,
-              unselectedLabelColor: Colors.white54,
-              tabs: const [
-                Tab(
-                  icon: Icon(Icons.movie_outlined),
-                  text: 'Anime',
+      builder: (context, _) {
+        final animeCount = state.animeLibraryEntries.length;
+        final mangaCount = state.mangaLibraryEntries.length;
+
+        return Column(
+          children: [
+            _libraryHeader(animeCount, mangaCount),
+            Container(
+              margin: const EdgeInsets.fromLTRB(14, 0, 14, 10),
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: _surface,
+                borderRadius: BorderRadius.circular(13),
+              ),
+              child: TabBar(
+                controller: _tabs,
+                indicator: BoxDecoration(
+                  color: _purple.withOpacity(0.22),
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                Tab(
-                  icon: Icon(Icons.menu_book_outlined),
-                  text: 'Manga',
+                dividerColor: Colors.transparent,
+                labelColor: Colors.white,
+                unselectedLabelColor: Colors.white54,
+                labelStyle: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 12,
                 ),
-              ],
+                tabs: [
+                  Tab(text: 'Anime ($animeCount)'),
+                  Tab(text: 'Manga ($mangaCount)'),
+                ],
+              ),
             ),
-          ),
-          Expanded(
-            child: TabBarView(
-              controller: _tabs,
-              children: [
-                _animeList(state),
-                _mangaList(state),
-              ],
+            Expanded(
+              child: TabBarView(
+                controller: _tabs,
+                children: [
+                  _animeList(state),
+                  _mangaList(state),
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        );
+      },
     );
   }
+
 }

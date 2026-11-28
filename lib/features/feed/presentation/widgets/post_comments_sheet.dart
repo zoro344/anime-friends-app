@@ -62,7 +62,6 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
 
   Future<void> _sendComment() async {
     final value = _controller.text.trim();
-
     if (value.isEmpty || _sending) return;
 
     setState(() {
@@ -87,6 +86,34 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
     setState(() {
       _sending = false;
     });
+
+    if (!succeeded) {
+      _showCommentActionResult(
+        false,
+        '',
+        'Could not add your comment. Please try again.',
+      );
+    }
+  }
+
+  void _showCommentActionResult(
+    bool succeeded,
+    String successMessage,
+    String fallbackMessage,
+  ) {
+    if (!mounted) return;
+
+    final message = succeeded
+        ? successMessage
+        : (widget.state.commentError.isNotEmpty
+            ? widget.state.commentError
+            : fallbackMessage);
+
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(content: Text(message)),
+      );
   }
 
   Future<void> _editComment(PostComment comment) async {
@@ -129,10 +156,16 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
       return;
     }
 
-    await widget.state.editComment(
+    final succeeded = await widget.state.editComment(
       comment.id,
       widget.postId,
       edited,
+    );
+
+    _showCommentActionResult(
+      succeeded,
+      'Comment updated.',
+      'Could not update the comment.',
     );
   }
 
@@ -161,16 +194,45 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
 
     if (confirmed != true || !mounted) return;
 
-    await widget.state.deleteComment(
+    final succeeded = await widget.state.deleteComment(
       comment.id,
       widget.postId,
     );
 
-    if (mounted && _replyingTo?.id == comment.id) {
+    _showCommentActionResult(
+      succeeded,
+      'Comment deleted.',
+      'Could not delete the comment.',
+    );
+
+    if (succeeded &&
+        mounted &&
+        (_replyingTo?.id == comment.id ||
+            _replyingTo?.parentCommentId == comment.id)) {
       setState(() {
         _replyingTo = null;
       });
     }
+  }
+
+  String _relativeTime(PostComment comment) {
+    final createdAt = DateTime.tryParse(comment.createdAt.toString());
+    if (createdAt == null) return '';
+
+    final difference = DateTime.now().difference(createdAt);
+    if (difference.isNegative || difference.inMinutes < 1) {
+      return 'Just now';
+    }
+    if (difference.inMinutes < 60) {
+      return '${difference.inMinutes}m ago';
+    }
+    if (difference.inHours < 24) {
+      return '${difference.inHours}h ago';
+    }
+    if (difference.inDays < 7) {
+      return '${difference.inDays}d ago';
+    }
+    return '${createdAt.day}/${createdAt.month}/${createdAt.year}';
   }
 
   Widget _buildCommentTile(
@@ -178,12 +240,13 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
     required bool isReply,
   }) {
     final isMine = comment.isMine(widget.state.userId);
+    final timestamp = _relativeTime(comment);
 
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         CircleAvatar(
-          radius: isReply ? 14 : 18,
+          radius: isReply ? 14 : 19,
           backgroundColor: AppColors.surfaceElevated,
           child: Text(
             comment.username.isEmpty
@@ -192,6 +255,7 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
             style: TextStyle(
               color: AppColors.textPrimary,
               fontSize: isReply ? 12 : 14,
+              fontWeight: FontWeight.bold,
             ),
           ),
         ),
@@ -200,36 +264,64 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                comment.username,
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontWeight: FontWeight.bold,
-                ),
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      comment.username,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  if (timestamp.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Text(
+                      timestamp,
+                      style: const TextStyle(
+                        color: AppColors.textDisabled,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ],
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 5),
               Text(
                 comment.content,
                 style: const TextStyle(
                   color: AppColors.textSecondary,
+                  fontSize: 14,
+                  height: 1.4,
                 ),
               ),
-              const SizedBox(height: 4),
               if (!isReply)
-                TextButton(
-                  onPressed: () => _startReply(comment),
-                  style: TextButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    minimumSize: const Size(40, 28),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => _startReply(comment),
+                    icon: const Icon(Icons.reply, size: 15),
+                    label: const Text('Reply'),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 2,
+                      ),
+                      minimumSize: const Size(40, 28),
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                   ),
-                  child: const Text('Reply'),
                 ),
             ],
           ),
         ),
         if (isMine)
           PopupMenuButton<String>(
+            padding: EdgeInsets.zero,
             color: AppColors.surfaceElevated,
             icon: const Icon(
               Icons.more_vert,
@@ -313,27 +405,77 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
 
     final visibleIds = rootComments.map((comment) => comment.id).toSet();
 
-    // Keep any orphaned replies visible rather than silently hiding them.
+    // Keep orphaned replies visible rather than silently hiding them.
     final orphanedReplies = replies
         .where((reply) => !visibleIds.contains(reply.parentCommentId))
         .toList();
 
     final replyingTo = _replyingTo;
+    final bottomInset = MediaQuery.viewInsetsOf(context).bottom;
 
     return SafeArea(
-      child: SizedBox(
-        height: MediaQuery.sizeOf(context).height * 0.75,
+      top: false,
+      child: Container(
+        height: MediaQuery.sizeOf(context).height * 0.78,
+        decoration: const BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(24),
+          ),
+        ),
         child: Column(
           children: [
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text(
-                'Comments',
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+            const SizedBox(height: 10),
+            Container(
+              width: 38,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.textDisabled,
+                borderRadius: BorderRadius.circular(10),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 14, 12, 14),
+              child: Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      'Comments',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 19,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.surfaceElevated,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Text(
+                      '${comments.length}',
+                      style: const TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    tooltip: 'Close comments',
+                    onPressed: () => Navigator.of(context).maybePop(),
+                    icon: const Icon(
+                      Icons.close,
+                      color: AppColors.iconMuted,
+                    ),
+                  ),
+                ],
               ),
             ),
             const Divider(
@@ -341,13 +483,41 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
               height: 1,
             ),
             if (state.commentError.isNotEmpty)
-              Padding(
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
                 padding: const EdgeInsets.all(12),
-                child: Text(
-                  state.commentError,
-                  style: const TextStyle(
-                    color: AppColors.error,
-                  ),
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.error_outline,
+                      color: AppColors.error,
+                      size: 19,
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Text(
+                        state.commentError,
+                        style: const TextStyle(
+                          color: AppColors.error,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                    TextButton(
+                      onPressed: () {
+                        setState(() {
+                          _loading = true;
+                        });
+                        _loadComments();
+                      },
+                      child: const Text('Retry'),
+                    ),
+                  ],
                 ),
               ),
             Expanded(
@@ -356,16 +526,41 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
                       child: CircularProgressIndicator(),
                     )
                   : rootComments.isEmpty && orphanedReplies.isEmpty
-                      ? const Center(
-                          child: Text(
-                            'No comments yet. Start the conversation!',
-                            style: TextStyle(
-                              color: AppColors.textSecondary,
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(28),
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.chat_bubble_outline,
+                                  size: 42,
+                                  color: AppColors.iconMuted,
+                                ),
+                                const SizedBox(height: 12),
+                                const Text(
+                                  'Start the conversation',
+                                  style: TextStyle(
+                                    color: AppColors.textPrimary,
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                                const SizedBox(height: 5),
+                                const Text(
+                                  'Be the first to share your thoughts.',
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 13,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         )
                       : ListView(
-                          padding: const EdgeInsets.all(16),
+                          padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
                           children: [
                             for (final comment in rootComments)
                               _buildThread(
@@ -373,15 +568,17 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
                                 replies
                                     .where(
                                       (reply) =>
-                                          reply.parentCommentId ==
-                                          comment.id,
+                                          reply.parentCommentId == comment.id,
                                     )
                                     .toList(),
                               ),
                             for (final reply in orphanedReplies)
-                              _buildCommentTile(
-                                reply,
-                                isReply: true,
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 12),
+                                child: _buildCommentTile(
+                                  reply,
+                                  isReply: true,
+                                ),
                               ),
                           ],
                         ),
@@ -393,27 +590,42 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
             if (replyingTo != null)
               Container(
                 width: double.infinity,
+                margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
                 padding: const EdgeInsets.symmetric(
-                  horizontal: 14,
+                  horizontal: 12,
                   vertical: 8,
                 ),
-                color: AppColors.surfaceElevated,
+                decoration: BoxDecoration(
+                  color: AppColors.surfaceElevated,
+                  borderRadius: BorderRadius.circular(12),
+                ),
                 child: Row(
                   children: [
+                    const Icon(
+                      Icons.reply,
+                      color: AppColors.iconMuted,
+                      size: 18,
+                    ),
+                    const SizedBox(width: 8),
                     Expanded(
                       child: Text(
                         'Replying to ${replyingTo.username}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: AppColors.textPrimary,
+                          fontSize: 13,
                         ),
                       ),
                     ),
                     IconButton(
                       tooltip: 'Cancel reply',
+                      visualDensity: VisualDensity.compact,
                       onPressed: _cancelReply,
                       icon: const Icon(
                         Icons.close,
                         color: AppColors.iconMuted,
+                        size: 19,
                       ),
                     ),
                   ],
@@ -422,45 +634,77 @@ class _PostCommentsSheetState extends State<PostCommentsSheet> {
             Padding(
               padding: EdgeInsets.fromLTRB(
                 12,
-                8,
+                10,
                 12,
-                MediaQuery.viewInsetsOf(context).bottom + 8,
+                bottomInset + 10,
               ),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Expanded(
-                    child: TextField(
-                      controller: _controller,
-                      maxLength: 1500,
-                      maxLines: 2,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
+                    child: Container(
+                      decoration: BoxDecoration(
+                        color: AppColors.surfaceElevated,
+                        borderRadius: BorderRadius.circular(22),
+                        border: Border.all(
+                          color: AppColors.border,
+                        ),
                       ),
-                      decoration: InputDecoration(
-                        hintText: replyingTo == null
-                            ? 'Write a comment...'
-                            : 'Write a reply...',
-                        counterText: '',
+                      child: TextField(
+                        controller: _controller,
+                        maxLength: 1500,
+                        minLines: 1,
+                        maxLines: 4,
+                        textCapitalization: TextCapitalization.sentences,
+                        style: const TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 14,
+                        ),
+                        decoration: InputDecoration(
+                          hintText: replyingTo == null
+                              ? 'Write a comment...'
+                              : 'Write a reply...',
+                          hintStyle: const TextStyle(
+                            color: AppColors.textDisabled,
+                            fontSize: 13,
+                          ),
+                          counterText: '',
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 17,
+                            vertical: 12,
+                          ),
+                          border: InputBorder.none,
+                          enabledBorder: InputBorder.none,
+                          focusedBorder: InputBorder.none,
+                        ),
                       ),
                     ),
                   ),
-                  IconButton(
-                    tooltip: replyingTo == null
-                        ? 'Send comment'
-                        : 'Send reply',
-                    onPressed: _sending ? null : _sendComment,
-                    icon: _sending
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
+                  const SizedBox(width: 9),
+                  SizedBox(
+                    width: 46,
+                    height: 46,
+                    child: FilledButton(
+                      onPressed: _sending ? null : _sendComment,
+                      style: FilledButton.styleFrom(
+                        backgroundColor: AppColors.textPrimary,
+                        foregroundColor: AppColors.background,
+                        padding: EdgeInsets.zero,
+                        shape: const CircleBorder(),
+                      ),
+                      child: _sending
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
+                            )
+                          : const Icon(
+                              Icons.send_rounded,
+                              size: 19,
                             ),
-                          )
-                        : const Icon(
-                            Icons.send,
-                            color: AppColors.textPrimary,
-                          ),
+                    ),
                   ),
                 ],
               ),
